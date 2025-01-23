@@ -2,9 +2,9 @@
 
 namespace Hasyirin\KPI\Tests;
 
+use Hasyirin\KPI\KPIServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Orchestra\Testbench\TestCase as Orchestra;
-use Hasyirin\KPI\KPIServiceProvider;
 
 class TestCase extends Orchestra
 {
