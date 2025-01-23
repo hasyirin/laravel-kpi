@@ -1,12 +1,12 @@
 <?php
 
-namespace VendorName\Skeleton\Commands;
+namespace Hasyirin\KPI\Commands;
 
 use Illuminate\Console\Command;
 
-class SkeletonCommand extends Command
+class KPICommand extends Command
 {
-    public $signature = 'skeleton';
+    public $signature = 'laravel-kpi';
 
     public $description = 'My command';
 

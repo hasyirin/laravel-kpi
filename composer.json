@@ -1,17 +1,19 @@
 {
-    "name": ":vendor_slug/:package_slug",
-    "description": ":package_description",
+    "name": "hasyirin/laravel-kpi",
+    "description": "This is my package laravel-kpi",
     "keywords": [
-        ":vendor_name",
+        "Hasyirin Fakhriy",
         "laravel",
-        ":package_slug"
+        "laravel-kpi",
+        "Turnaround Time",
+        "Movement"
     ],
-    "homepage": "https://github.com/:vendor_slug/:package_slug",
+    "homepage": "https://github.com/hasyirin/laravel-kpi",
     "license": "MIT",
     "authors": [
         {
-            "name": ":author_name",
-            "email": "author@domain.com",
+            "name": "Hasyirin Fakhriy",
+            "email": "hasyirin@novarift.my",
             "role": "Developer"
         }
     ],
@@ -35,13 +37,13 @@
     },
     "autoload": {
         "psr-4": {
-            "VendorName\\Skeleton\\": "src/",
-            "VendorName\\Skeleton\\Database\\Factories\\": "database/factories/"
+            "Hasyirin\\KPI\\": "src/",
+            "Hasyirin\\KPI\\Database\\Factories\\": "database/factories/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "VendorName\\Skeleton\\Tests\\": "tests/",
+            "Hasyirin\\KPI\\Tests\\": "tests/",
             "Workbench\\App\\": "workbench/app/"
         }
     },
@@ -63,10 +65,10 @@
     "extra": {
         "laravel": {
             "providers": [
-                "VendorName\\Skeleton\\SkeletonServiceProvider"
+                "Hasyirin\\KPI\\KPIServiceProvider"
             ],
             "aliases": {
-                "Skeleton": "VendorName\\Skeleton\\Facades\\Skeleton"
+                "KPI": "Hasyirin\\KPI\\Facades\\KPI"
             }
         }
     },
