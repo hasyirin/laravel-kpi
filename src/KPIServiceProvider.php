@@ -2,9 +2,9 @@
 
 namespace Hasyirin\KPI;
 
+use Hasyirin\KPI\Commands\KPICommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
-use Hasyirin\KPI\Commands\KPICommand;
 
 class KPIServiceProvider extends PackageServiceProvider
 {
