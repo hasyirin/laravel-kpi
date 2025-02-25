@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hasyirin\KPI\Formulas;
 
-use Hasyirin\KPI\Data\Hour;
 use Hasyirin\KPI\Data\WorkSchedule;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
@@ -12,7 +11,6 @@ use Illuminate\Support\Collection;
 
 class TurnaroundTime
 {
-
     public int $totalMinutes;
 
     public function __construct(

@@ -43,10 +43,7 @@ class Movement extends Model
         static::saving(fn (self $movement) => $movement->recalculate());
     }
 
-    protected function recalculate(): void
-    {
-
-    }
+    protected function recalculate(): void {}
 
     public function previous(): BelongsTo
     {

@@ -4,14 +4,14 @@ namespace Hasyirin\KPI;
 
 use Illuminate\Support\Carbon;
 
-class KPI {
+class KPI
+{
     public function calculate(
         Carbon|string $start,
         Carbon|string|null $end,
         array $excludeDates = [],
-        array|null $days = null
-    ): array
-    {
+        ?array $days = null
+    ): array {
 
         $days ??= config('kpi.days');
 
