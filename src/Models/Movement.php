@@ -6,22 +6,28 @@ namespace Hasyirin\KPI\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Movement extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
+        'parent_id',
         'previous_id',
         'movable_id',
         'movable_type',
         'sender_id',
         'sender_type',
-        'recipient_id',
-        'recipient_type',
+        'receiver_id',
+        'receiver_type',
         'status',
-        'properties',
         'period',
         'hours',
+        'notes',
+        'properties',
         'received_at',
         'completed_at',
     ];
@@ -29,9 +35,9 @@ class Movement extends Model
     protected function casts(): array
     {
         return [
-            'properties' => 'array',
             'period' => 'float',
             'hours' => 'array',
+            'properties' => 'array',
             'received_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
@@ -45,9 +51,19 @@ class Movement extends Model
 
     protected function recalculate(): void {}
 
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class);
+    }
+
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id');
+    }
+
     public function previous(): BelongsTo
     {
-        return $this->belongsTo(self::class, 'previous_id');
+        return $this->belongsTo(self::class);
     }
 
     public function movable(): MorphTo
@@ -60,7 +76,7 @@ class Movement extends Model
         return $this->morphTo();
     }
 
-    public function recipient(): MorphTo
+    public function receiver(): MorphTo
     {
         return $this->morphTo();
     }

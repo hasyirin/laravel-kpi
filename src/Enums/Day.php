@@ -13,9 +13,4 @@ enum Day: int
     case THURSDAY = 4;
     case FRIDAY = 5;
     case SATURDAY = 6;
-
-    public function iso(): int
-    {
-        return $this->value + 1;
-    }
 }

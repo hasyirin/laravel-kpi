@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace Hasyirin\KPI\Data;
 
-use Hasyirin\KPI\Enums\Day;
-
 readonly class WorkSchedule
 {
-    public function __construct(public Day $day, public Hour $start, public Hour $end) {}
+    public function __construct(public Hour $start, public Hour $end) {
+        assert($this->start->hour <= $this->end->hour);
+    }
 
-    public static function make(Day $day, Hour $start, Hour $end): self
+    public static function make(Hour $start, Hour $end): self
     {
-        return new self($day, $start, $end);
+        return new self($start, $end);
+    }
+
+    public function minutes(): int
+    {
+        return $this->end->minutes() - $this->start->minutes();
     }
 }

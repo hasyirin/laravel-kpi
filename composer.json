@@ -20,7 +20,8 @@
     "require": {
         "php": "^8.4",
         "spatie/laravel-package-tools": "^1.16",
-        "illuminate/contracts": "^10.0||^11.0"
+        "illuminate/contracts": "^10.0||^11.0",
+        "ext-bcmath": "*"
     },
     "require-dev": {
         "laravel/pint": "^1.14",
