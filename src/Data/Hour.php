@@ -6,7 +6,8 @@ namespace Hasyirin\KPI\Data;
 
 readonly class Hour
 {
-    public function __construct(public int $hour, public int $minute = 0) {
+    public function __construct(public int $hour, public int $minute = 0)
+    {
         assert($this->hour >= 0 && $this->hour < 24);
         assert($this->minute >= 0 && $this->minute < 60);
     }

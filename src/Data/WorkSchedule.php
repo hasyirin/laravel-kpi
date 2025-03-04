@@ -6,7 +6,8 @@ namespace Hasyirin\KPI\Data;
 
 readonly class WorkSchedule
 {
-    public function __construct(public Hour $start, public Hour $end) {
+    public function __construct(public Hour $start, public Hour $end)
+    {
         assert($this->start->hour <= $this->end->hour);
     }
 

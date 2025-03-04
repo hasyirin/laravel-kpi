@@ -39,7 +39,6 @@ it('a full day of work on friday', function () {
     ]);
 });
 
-
 it('1 day of work done on saturday', function () {
     $start = Carbon::parse('2025-01-04 08:00');
     $end = Carbon::parse('2025-01-04 17:00');
