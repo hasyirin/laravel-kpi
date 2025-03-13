@@ -7,21 +7,30 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    public function up()
+    protected string $table;
+    protected string $model;
+
+    public function __construct()
     {
-        Schema::create('laravel_kpi_table', function (Blueprint $table) {
+        $this->table = config('kpi.tables.movements');
+        $this->model = config('kpi.models.movement');
+    }
+
+    public function up(): void
+    {
+        Schema::create($this->table, function (Blueprint $table) {
             $table->id();
 
-            $table->foreignIdFor(Movement::class, 'parent_id')
+            $table->foreignIdFor($this->model, 'parent_id')
                 ->index()
                 ->nullable()
-                ->constrained((new Movement)->getTable())
+                ->constrained((new $this->model)->getTable())
                 ->cascadeOnDelete();
 
-            $table->foreignIdFor(Movement::class, 'previous_id')
+            $table->foreignIdFor($this->model, 'previous_id')
                 ->index()
                 ->nullable()
-                ->constrained((new Movement)->getTable())
+                ->constrained((new $this->model)->getTable())
                 ->cascadeOnDelete();
 
             $table->morphs('movable');
@@ -43,5 +52,10 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
         });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists($this->table);
     }
 };
