@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 interface HasMovement
 {
     public function movement(): MorphOne;
+
     public function movements(): MorphMany;
+
     public function pass(): Movement;
 }

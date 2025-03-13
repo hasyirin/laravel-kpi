@@ -37,8 +37,7 @@ trait InteractsWithMovement
         ?Carbon $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
-    ): Movement
-    {
+    ): Movement {
         $sender = ($sender instanceof User) ? $sender->id : $sender;
         $actor = ($actor instanceof User) ? $actor->id : $actor;
 
