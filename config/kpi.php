@@ -7,6 +7,10 @@ use Hasyirin\KPI\Models\Holiday;
 use Hasyirin\KPI\Models\Movement;
 
 return [
+    'formats' => [
+        'datetime' => 'd/m/Y H:i: A',
+    ],
+
     'tables' => [
         'movements' => 'movements',
         'holidays' => 'holidays',
