@@ -27,9 +27,9 @@ class KPI
         $total = ['period' => 0, 'minutes' => 0, 'scheduled' => 0, 'unscheduled' => 0, 'excluded' => 0];
 
         $excludeDates = collect([
-                ...collect($excludeDates)->map(fn (Carbon|string $date) => Carbon::parse($date)),
-                ...Holiday::query()->range($start, $end)->pluck('date'),
-            ]);
+            ...collect($excludeDates)->map(fn (Carbon|string $date) => Carbon::parse($date)),
+            ...Holiday::query()->range($start, $end)->pluck('date'),
+        ]);
 
         $minutes = 0;
 

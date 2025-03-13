@@ -3,8 +3,8 @@
 use Hasyirin\KPI\Data\Hour;
 use Hasyirin\KPI\Data\WorkSchedule;
 use Hasyirin\KPI\Enums\Day;
-use Hasyirin\KPI\Models\Movement;
 use Hasyirin\KPI\Models\Holiday;
+use Hasyirin\KPI\Models\Movement;
 
 return [
     'tables' => [

@@ -19,7 +19,7 @@ it('a full day of work on wednesday', function () {
             'minutes' => 540,
             'unscheduled' => 0,
             'scheduled' => 1,
-            'excluded' =>0,
+            'excluded' => 0,
         ]),
     ])));
 });

@@ -107,6 +107,7 @@ class Movement extends Model
     {
         return $this->morphTo();
     }
+
     public function formattedPeriod(): Attribute
     {
         return Attribute::make(get: fn () => $this->period ?? KPI::calculate($this->received_at, $this->completed_at)->period)->withoutObjectCaching();
