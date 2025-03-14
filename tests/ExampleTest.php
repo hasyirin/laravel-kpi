@@ -10,7 +10,7 @@ function calc(Carbon|string $start, Carbon|string $end): KPIData
     return KPI::calculate(Carbon::parse($start), Carbon::parse($end));
 }
 
-it('test', function () {
+it('working after hours should yield 0 work hours.', function () {
     expect(calc('2025-01-01 20:00', '2025-01-01 22:00'))->toMatchArray(KPIData::make(...[
         'minutes' => 0,
         'hours' => 0,
