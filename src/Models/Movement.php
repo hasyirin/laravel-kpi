@@ -22,8 +22,8 @@ use Illuminate\Support\Carbon;
  * @property string $movable_type
  * @property int $sender_id
  * @property string $sender_type
- * @property int $receiver_id
- * @property string $receiver_type
+ * @property int $actor_id
+ * @property string $actor_type
  * @property string $status
  * @property float $period
  * @property float $hours
@@ -42,8 +42,8 @@ class Movement extends Model
         'movable_type',
         'sender_id',
         'sender_type',
-        'receiver_id',
-        'receiver_type',
+        'actor_id',
+        'actor_type',
         'status',
         'period',
         'hours',
@@ -107,7 +107,7 @@ class Movement extends Model
         return $this->morphTo();
     }
 
-    public function receiver(): MorphTo
+    public function actor(): MorphTo
     {
         return $this->morphTo();
     }

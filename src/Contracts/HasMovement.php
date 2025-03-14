@@ -5,9 +5,9 @@ namespace Hasyirin\KPI\Contracts;
 use BackedEnum;
 use Hasyirin\KPI\Models\Movement;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
-use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Carbon;
 
 /**
@@ -20,5 +20,5 @@ interface HasMovement
 
     public function movements(): MorphMany;
 
-    public function pass(BackedEnum|string $status, User|int|null $sender = null, User|int|null $receiver = null, ?Carbon $receivedAt = null, ?string $notes = null, Collection|array|null $properties = null, bool $completesLastMovement = true): Movement;
+    public function pass(BackedEnum|string $status, ?Model $sender = null, ?Model $actor = null, ?Carbon $receivedAt = null, ?string $notes = null, Collection|array|null $properties = null, bool $completesLastMovement = true): Movement;
 }

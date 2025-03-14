@@ -8,7 +8,6 @@ use Hasyirin\KPI\Models\Movement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
-use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -32,30 +31,30 @@ trait InteractsWithMovement
 
     public function pass(
         BackedEnum|string $status,
-        User|int|null $sender = null,
-        User|int|null $receiver = null,
+        ?Model $sender = null,
+        ?Model $actor = null,
         ?Carbon $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
         bool $completesLastMovement = true,
     ): Movement {
-        $sender = ($sender instanceof User) ? $sender->id : $sender;
-        $receiver = ($receiver instanceof User) ? $receiver->id : $receiver;
-
         $receivedAt ??= now();
 
         DB::beginTransaction();
 
         if ($completesLastMovement && $this->movement) {
-            $this->movement->receiver_id ??= isset($sender) ? null : $receiver;
+            $this->movement->actor_id ??= isset($sender) ? null : $actor?->id;
+            $this->movement->actor_type ??= isset($sender) ? null : $actor?->getMorphClass();
             $this->movement->completed_at ??= $receivedAt;
             $this->movement->save();
         }
 
         $movement = new Movement([
             'previous_id' => $this->movement?->id,
-            'sender_id' => $sender,
-            'receiver_id' => $receiver,
+            'sender_id' => $sender?->id,
+            'sender_type' => $sender?->getMorphClass(),
+            'actor_id' => $actor?->id,
+            'actor_type' => $actor?->getMorphClass(),
             'received_at' => $receivedAt,
             'status' => $status,
             'notes' => $notes,

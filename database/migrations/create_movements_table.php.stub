@@ -36,7 +36,7 @@ return new class extends Migration
             $table->morphs('movable');
 
             $table->nullableMorphs('sender');
-            $table->nullableMorphs('receiver');
+            $table->nullableMorphs('actor');
 
             $table->string('status');
 
