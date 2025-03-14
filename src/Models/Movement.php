@@ -53,6 +53,10 @@ class Movement extends Model
         'completed_at',
     ];
 
+    protected $attributes = [
+        'properties' => '[]',
+    ];
+
     protected function casts(): array
     {
         return [

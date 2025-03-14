@@ -58,7 +58,7 @@ trait InteractsWithMovement
             'received_at' => $receivedAt,
             'status' => $status,
             'notes' => $notes,
-            'properties' => $properties,
+            'properties' => $properties ?? [],
         ]);
 
         $movement->movable()->associate($this);
