@@ -5,6 +5,25 @@ use Hasyirin\KPI\Data\KPIMetadata;
 use Hasyirin\KPI\Facades\KPI;
 use Illuminate\Support\Carbon;
 
+it('1 hour of work on wednesday', function () {
+    $start = Carbon::parse('2025-01-01 08:00');
+    $end = Carbon::parse('2025-01-01 09:00');
+
+    $data = KPI::calculate($start, $end);
+
+    $this->assertTrue($data->equals(KPIData::make(...[
+        'minutes' => 60,
+        'hours' => 1,
+        'period' => 0.1111,
+        'metadata' => KPIMetadata::make(...[
+            'minutes' => 540,
+            'unscheduled' => 0,
+            'scheduled' => 1,
+            'excluded' => 0,
+        ]),
+    ])));
+});
+
 it('a full day of work on wednesday', function () {
     $start = Carbon::parse('2025-01-01 08:00');
     $end = Carbon::parse('2025-01-01 17:00');
