@@ -64,9 +64,9 @@ class KPI
 
             $finish = min($end, $step->setHour($schedule->end->hour)->setMinute($schedule->end->minute));
 
-            $minutes += $step->diffInMinutes($finish);
+            $minutes += max(0, $step->diffInMinutes($finish));
 
-            $period = bcdiv((string) $step->diffInMinutes($finish), (string) $schedule->minutes(), 4);
+            $period = max(0, bcdiv((string) $step->diffInMinutes($finish), (string) $schedule->minutes(), 4));
 
             $total['period'] = bcadd($total['period'], $period, 4);
 

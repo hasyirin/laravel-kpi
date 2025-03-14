@@ -14,7 +14,7 @@ final class KPIMetadata implements Arrayable, JsonSerializable
         public int $excluded = 0,
     ) {}
 
-    public static function make(int $minutes, int $unscheduled = 0, int $scheduled = 0, int $excluded = 0): self
+    public static function make(int $minutes = 0, int $unscheduled = 0, int $scheduled = 0, int $excluded = 0): self
     {
         return new self($minutes, $unscheduled, $scheduled, $excluded);
     }

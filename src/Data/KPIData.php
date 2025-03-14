@@ -14,9 +14,9 @@ final class KPIData implements Arrayable, JsonSerializable
         public KPIMetadata $metadata,
     ) {}
 
-    public static function make(float $minutes, float $hours, float $period, KPIMetadata $metadata): self
+    public static function make(float $minutes = 0, float $hours = 0, float $period = 0, ?KPIMetadata $metadata = null): self
     {
-        return new self($minutes, $hours, $period, $metadata);
+        return new self($minutes, $hours, $period, $metadata ?? KPIMetadata::make());
     }
 
     public function equals(KPIData $other): bool
