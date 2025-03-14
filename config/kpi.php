@@ -8,7 +8,7 @@ use Hasyirin\KPI\Models\Movement;
 
 return [
     'formats' => [
-        'datetime' => 'd/m/Y H:i: A',
+        'datetime' => 'd/m/Y H:i A',
     ],
 
     'tables' => [
