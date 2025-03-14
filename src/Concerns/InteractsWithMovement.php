@@ -33,20 +33,21 @@ trait InteractsWithMovement
     public function pass(
         BackedEnum|string $status,
         User|int|null $sender = null,
-        User|int|null $actor = null,
+        User|int|null $receiver = null,
         ?Carbon $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
+        bool $completesLastMovement = true,
     ): Movement {
         $sender = ($sender instanceof User) ? $sender->id : $sender;
-        $actor = ($actor instanceof User) ? $actor->id : $actor;
+        $receiver = ($receiver instanceof User) ? $receiver->id : $receiver;
 
         $receivedAt ??= now();
 
         DB::beginTransaction();
 
-        if ($this->movement) {
-            $this->movement->actor_id ??= isset($sender) ? null : $actor;
+        if ($completesLastMovement && $this->movement) {
+            $this->movement->receiver_id ??= isset($sender) ? null : $receiver;
             $this->movement->completed_at ??= $receivedAt;
             $this->movement->save();
         }
@@ -54,7 +55,7 @@ trait InteractsWithMovement
         $movement = new Movement([
             'previous_id' => $this->movement?->id,
             'sender_id' => $sender,
-            'actor_id' => $actor,
+            'receiver_id' => $receiver,
             'received_at' => $receivedAt,
             'status' => $status,
             'notes' => $notes,

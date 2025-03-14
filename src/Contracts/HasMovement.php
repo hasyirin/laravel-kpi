@@ -20,5 +20,5 @@ interface HasMovement
 
     public function movements(): MorphMany;
 
-    public function pass(BackedEnum|string $status, User|int|null $sender = null, User|int|null $actor = null, ?Carbon $receivedAt = null, ?string $notes = null, Collection|array|null $properties = null): Movement;
+    public function pass(BackedEnum|string $status, User|int|null $sender = null, User|int|null $receiver = null, ?Carbon $receivedAt = null, ?string $notes = null, Collection|array|null $properties = null, bool $completesLastMovement = true): Movement;
 }
