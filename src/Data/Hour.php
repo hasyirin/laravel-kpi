@@ -20,6 +20,7 @@ readonly class Hour
     public static function parse(string $data): self
     {
         [$hour, $minute] = explode(':', $data);
+
         return new self(intval($hour), intval($minute));
     }
 
