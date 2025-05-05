@@ -1,7 +1,5 @@
 <?php
 
-use Hasyirin\KPI\Data\Hour;
-use Hasyirin\KPI\Data\WorkSchedule;
 use Hasyirin\KPI\Enums\Day;
 use Hasyirin\KPI\Models\Holiday;
 use Hasyirin\KPI\Models\Movement;
@@ -22,10 +20,10 @@ return [
     ],
 
     'schedule' => [
-        Day::MONDAY->value => WorkSchedule::make(start: Hour::make(8), end: Hour::make(17)),
-        Day::TUESDAY->value => WorkSchedule::make(start: Hour::make(8), end: Hour::make(17)),
-        Day::WEDNESDAY->value => WorkSchedule::make(start: Hour::make(8), end: Hour::make(17)),
-        Day::THURSDAY->value => WorkSchedule::make(start: Hour::make(8), end: Hour::make(17)),
-        Day::FRIDAY->value => WorkSchedule::make(start: Hour::make(8), end: Hour::make(15, 30)),
+        Day::MONDAY->value => ['8:00', '17:00'],
+        Day::TUESDAY->value => ['8:00', '17:00'],
+        Day::WEDNESDAY->value => ['8:00', '17:00'],
+        Day::THURSDAY->value => ['8:00', '17:00'],
+        Day::FRIDAY->value => ['8:00', '15:30'],
     ],
 ];

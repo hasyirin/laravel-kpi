@@ -11,6 +11,11 @@ readonly class WorkSchedule
         assert($this->start->hour <= $this->end->hour);
     }
 
+    public static function parse(array $data): self
+    {
+        return new self(Hour::parse($data[0]), Hour::parse($data[1]));
+    }
+
     public static function make(Hour $start, Hour $end): self
     {
         return new self($start, $end);

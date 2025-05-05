@@ -7,6 +7,7 @@ use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Data\KPIMetadata;
 use Hasyirin\KPI\Data\WorkSchedule;
 use Hasyirin\KPI\Models\Holiday;
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
 
 class KPI
@@ -14,12 +15,12 @@ class KPI
     public function calculate(
         Carbon|string $start,
         Carbon|string|null $end = null,
-        array $excludeDates = [],
-        array $schedules = [],
+        Arrayable|array $excludeDates = [],
+        Arrayable|array $schedules = [],
     ): KPIData {
 
         if (empty($schedules)) {
-            $schedules = config('kpi.schedule');
+            $schedules = collect(config('kpi.schedule'))->map(fn (array $data) => WorkSchedule::parse($data));
         }
 
         $schedules = collect($schedules);

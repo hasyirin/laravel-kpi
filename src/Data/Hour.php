@@ -17,6 +17,12 @@ readonly class Hour
         return ($this->hour * 60) + $this->minute;
     }
 
+    public static function parse(string $data): self
+    {
+        [$hour, $minute] = explode(':', $data);
+        return new self(intval($hour), intval($minute));
+    }
+
     public static function make(int $hour, int $minute = 0): self
     {
         return new self($hour, $minute);
