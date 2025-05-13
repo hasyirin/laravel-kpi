@@ -50,7 +50,7 @@ trait InteractsWithMovement
             $this->movement->save();
         }
 
-        $movement = config('kpi.models.movement')::new([
+        $movement = new (config('kpi.models.movement'))([
             'previous_id' => $this->movement?->id,
             'sender_id' => $sender?->id,
             'sender_type' => $sender?->getMorphClass(),
