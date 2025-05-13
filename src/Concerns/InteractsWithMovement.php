@@ -4,6 +4,7 @@ namespace Hasyirin\KPI\Concerns;
 
 use BackedEnum;
 use Hasyirin\KPI\Contracts\HasMovement;
+use Hasyirin\KPI\Events\Passed;
 use Hasyirin\KPI\Models\Movement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -49,7 +50,7 @@ trait InteractsWithMovement
             $this->movement->save();
         }
 
-        $movement = new Movement([
+        $movement = config('kpi.models.movement')::new([
             'previous_id' => $this->movement?->id,
             'sender_id' => $sender?->id,
             'sender_type' => $sender?->getMorphClass(),
@@ -63,6 +64,8 @@ trait InteractsWithMovement
 
         $movement->movable()->associate($this);
         $movement->save();
+
+        Passed::dispatch($movement, $this->movement);
 
         $this->load('movement');
 
