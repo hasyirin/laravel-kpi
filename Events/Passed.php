@@ -10,7 +10,7 @@ use Illuminate\Queue\SerializesModels;
 
 class Passed
 {
-    use Dispatchable, InteractsWithSockets, InteractsWithQueue, SerializesModels;
+    use Dispatchable, InteractsWithQueue, InteractsWithSockets, SerializesModels;
 
     public function __construct(public Movement $current, public Movement $previous) {}
 }
