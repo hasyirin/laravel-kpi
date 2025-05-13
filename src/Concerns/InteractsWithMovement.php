@@ -65,7 +65,7 @@ trait InteractsWithMovement
         $movement->movable()->associate($this);
         $movement->save();
 
-        Passed::dispatch($movement, $this->movement);
+        event(new Passed($movement, $this->movement));
 
         $this->load('movement');
 
