@@ -12,5 +12,5 @@ class Passed
 {
     use Dispatchable, InteractsWithQueue, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public Movement $current, public Movement $previous) {}
+    public function __construct(public Movement $current, public ?Movement $previous = null) {}
 }
