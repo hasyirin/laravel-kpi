@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property string $notes
  * @property Carbon $received_at
  * @property ?Carbon $completed_at
+ * @property float $interval
  */
 class Movement extends Model
 {
@@ -120,10 +121,18 @@ class Movement extends Model
     public function interval(): Attribute
     {
         return Attribute::make(get: fn () => ($this->period > 0 || $this->period === null)
-            ? now()->addSeconds(($this->hours ?? KPI::calculate($this->received_at, $this->completed_at)->hours) * 60 * 60)->diffForHumans([
+            ? ($this->hours ?? KPI::calculate($this->received_at, $this->completed_at)->hours) * 60 * 60
+            : 0
+        )->withoutObjectCaching();
+    }
+
+    public function formattedInterval(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => now()->addSeconds($this->interval)->diffForHumans([
                 'syntax' => CarbonInterface::DIFF_ABSOLUTE,
                 'parts' => 2,
-            ]) : ''
+            ]),
         )->withoutObjectCaching();
     }
 
