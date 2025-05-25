@@ -82,7 +82,7 @@ trait InteractsWithMovement
         ?string $notes = null,
         Collection|array|null $properties = null,
         bool $completesLastMovement = true
-    ): Movement | false {
+    ): Movement|false {
         if ($this->movement?->status === ($status instanceof BackedEnum ? $status->value : $status)) {
             return false;
         }
