@@ -84,7 +84,7 @@ class Movement extends Model
 
     protected function calculate(): KPIData
     {
-        return ! in_array($this->status, config("kpi.status.$this->movable_type.except"))
+        return ! in_array($this->status, config("kpi.status.$this->movable_type.except", []))
             ? KPI::calculate($this->received_at, $this->completed_at)
             : KPIData::make();
     }
