@@ -87,6 +87,10 @@ trait InteractsWithMovement
             return false;
         }
 
+        if ($this->movement?->actor_type === $actor?->getMorphClass() && $this->movement?->actor_id === $actor?->getKey()) {
+            return false;
+        }
+
         return $this->pass($status, $sender, $actor, $receivedAt, $notes, $properties, $completesLastMovement);
     }
 }
