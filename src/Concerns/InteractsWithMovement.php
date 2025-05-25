@@ -73,4 +73,20 @@ trait InteractsWithMovement
 
         return $movement;
     }
+
+    public function passIfNotCurrent(
+        BackedEnum|string $status,
+        ?Model $sender = null,
+        ?Model $actor = null,
+        ?Carbon $receivedAt = null,
+        ?string $notes = null,
+        Collection|array|null $properties = null,
+        bool $completesLastMovement = true
+    ): Movement | false {
+        if ($this->movement?->status === ($status instanceof BackedEnum ? $status->value : $status)) {
+            return false;
+        }
+
+        return $this->pass($status, $sender, $actor, $receivedAt, $notes, $properties, $completesLastMovement);
+    }
 }
