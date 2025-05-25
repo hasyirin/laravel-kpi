@@ -83,11 +83,10 @@ trait InteractsWithMovement
         Collection|array|null $properties = null,
         bool $completesLastMovement = true
     ): Movement|false {
-        if ($this->movement?->status === ($status instanceof BackedEnum ? $status->value : $status)) {
-            return false;
-        }
+        $same_status = $this->movement?->status === ($status instanceof BackedEnum ? $status->value : $status);
+        $same_actor = $this->movement?->actor_type === $actor?->getMorphClass() && $this->movement?->actor_id === $actor?->getKey();
 
-        if ($this->movement?->actor_type === $actor?->getMorphClass() && $this->movement?->actor_id === $actor?->getKey()) {
+        if ($same_status && $same_actor) {
             return false;
         }
 
