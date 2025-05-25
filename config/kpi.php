@@ -26,4 +26,8 @@ return [
         Day::THURSDAY->value => ['8:00', '17:00'],
         Day::FRIDAY->value => ['8:00', '15:30'],
     ],
+
+    'status' => [
+
+    ],
 ];

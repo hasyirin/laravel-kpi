@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hasyirin\KPI\Models;
 
 use Carbon\CarbonInterface;
+use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Facades\KPI;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
@@ -72,15 +73,20 @@ class Movement extends Model
     protected static function boot(): void
     {
         parent::boot();
-        static::saving(fn (self $movement) => $movement->recalculate());
+
+        static::saving(function (self $movement) {
+            $kpi = $movement->calculate();
+
+            $movement->period = filled($movement->completed_at) ? $kpi->period : null;
+            $movement->hours = filled($movement->completed_at) ? $kpi->hours : null;
+        });
     }
 
-    protected function recalculate(): void
+    protected function calculate(): KPIData
     {
-        $kpi = KPI::calculate($this->received_at, $this->completed_at);
-
-        $this->period = filled($this->completed_at) ? $kpi->period : null;
-        $this->hours = filled($this->completed_at) ? $kpi->hours : null;
+        return ! in_array($this->status, config("kpi.status.$this->movable_type.except"))
+            ? KPI::calculate($this->received_at, $this->completed_at)
+            : KPIData::make();
     }
 
     public function parent(): BelongsTo
@@ -115,13 +121,13 @@ class Movement extends Model
 
     public function formattedPeriod(): Attribute
     {
-        return Attribute::make(get: fn () => $this->period ?? KPI::calculate($this->received_at, $this->completed_at)->period)->withoutObjectCaching();
+        return Attribute::make(get: fn () => $this->period ?? $this->calculate()->period)->withoutObjectCaching();
     }
 
     public function interval(): Attribute
     {
         return Attribute::make(get: fn () => ($this->period > 0 || $this->period === null)
-            ? ($this->hours ?? KPI::calculate($this->received_at, $this->completed_at)->hours) * 60 * 60
+            ? ($this->hours ?? $this->calculate()->hours) * 60 * 60
             : 0
         )->withoutObjectCaching();
     }
