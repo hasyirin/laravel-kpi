@@ -76,7 +76,7 @@ class KPI
 
         return KPIData::make(
             minutes: $minutes,
-            hours: (float) bcdiv((string) $minutes, '60', 4),
+            hours: (float) bcdiv((string) max($minutes, 0.0001), '60', 4),
             period: $total['period'],
             metadata: KPIMetadata::make(
                 minutes: $total['minutes'],
