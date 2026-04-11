@@ -4,11 +4,11 @@ namespace Hasyirin\KPI\Contracts;
 
 use BackedEnum;
 use Hasyirin\KPI\Models\Movement;
-use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * @property ?Movement $movement
