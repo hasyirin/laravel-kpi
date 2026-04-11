@@ -4,6 +4,7 @@ namespace Hasyirin\KPI\Tests;
 
 use Hasyirin\KPI\KPIServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Model;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 class TestCase extends Orchestra
@@ -11,6 +12,10 @@ class TestCase extends Orchestra
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Migration stubs instantiate models (for getTable()), which boots them
+        // on a stale event dispatcher. Clear so they re-boot with the test dispatcher.
+        Model::clearBootedModels();
 
         Factory::guessFactoryNamesUsing(
             fn (string $modelName) => 'Hasyirin\\KPI\\Database\\Factories\\'.class_basename($modelName).'Factory'
@@ -28,10 +33,19 @@ class TestCase extends Orchestra
     {
         config()->set('database.default', 'testing');
 
-        /*
-         foreach (\Illuminate\Support\Facades\File::allFiles(__DIR__ . '/database/migrations') as $migration) {
-            (include $migration->getRealPath())->up();
-         }
-         */
+        $migrations = [
+            'create_holidays_table',
+            'create_movements_table',
+        ];
+
+        foreach ($migrations as $migration) {
+            (include __DIR__.'/../database/migrations/'.$migration.'.php.stub')->up();
+        }
+
+        $app['db']->connection()->getSchemaBuilder()->create('tasks', function ($table) {
+            $table->id();
+            $table->string('title');
+            $table->timestamps();
+        });
     }
 }

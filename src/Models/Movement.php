@@ -26,8 +26,8 @@ use Illuminate\Support\Carbon;
  * @property int $actor_id
  * @property string $actor_type
  * @property string $status
- * @property float $period
- * @property float $hours
+ * @property ?float $period
+ * @property ?float $hours
  * @property string $notes
  * @property Carbon $received_at
  * @property ?Carbon $completed_at
@@ -63,7 +63,7 @@ class Movement extends Model
     {
         return [
             'period' => 'float',
-            'hours' => 'array',
+            'hours' => 'float',
             'properties' => 'array',
             'received_at' => 'datetime',
             'completed_at' => 'datetime',
