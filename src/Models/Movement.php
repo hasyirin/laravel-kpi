@@ -10,14 +10,12 @@ use Hasyirin\KPI\Facades\KPI;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $parent_id
  * @property int $previous_id
  * @property int $movable_id
  * @property string $movable_type
@@ -38,7 +36,6 @@ class Movement extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'parent_id',
         'previous_id',
         'movable_id',
         'movable_type',
@@ -87,16 +84,6 @@ class Movement extends Model
         return ! in_array($this->status, config("kpi.status.$this->movable_type.except", []))
             ? KPI::calculate($this->received_at, $this->completed_at)
             : KPIData::make();
-    }
-
-    public function parent(): BelongsTo
-    {
-        return $this->belongsTo(self::class);
-    }
-
-    public function children(): HasMany
-    {
-        return $this->hasMany(self::class, 'parent_id');
     }
 
     public function previous(): BelongsTo
