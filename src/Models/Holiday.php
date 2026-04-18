@@ -23,8 +23,10 @@ class Holiday extends Model
         ];
     }
 
-    public function scopeRange(Builder $query, Carbon $start, ?Carbon $end = null): Builder
+    public function scopeRange(Builder $query, Carbon|string $start, Carbon|string|null $end = null): void
     {
-        return $query->whereDate('date', '>=', $start)->whereDate('date', '<=', $end ?? now());
+        $query
+            ->whereDate('date', '>=', Carbon::parse($start))
+            ->whereDate('date', '<=', Carbon::parse($end ?? now()));
     }
 }

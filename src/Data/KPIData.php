@@ -21,10 +21,15 @@ final class KPIData implements Arrayable, JsonSerializable
 
     public function equals(KPIData $other): bool
     {
-        return $this->minutes === $other->minutes
-            && $this->hours === $other->hours
-            && $this->period === $other->period
+        return self::floatEquals($this->minutes, $other->minutes)
+            && self::floatEquals($this->hours, $other->hours)
+            && self::floatEquals($this->period, $other->period)
             && $this->metadata->equals($other->metadata);
+    }
+
+    private static function floatEquals(float $a, float $b, float $epsilon = 0.0001): bool
+    {
+        return abs($a - $b) < $epsilon;
     }
 
     public function toArray(): array

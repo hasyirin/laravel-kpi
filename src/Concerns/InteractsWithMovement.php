@@ -41,37 +41,35 @@ trait InteractsWithMovement
     ): Movement {
         $receivedAt ??= now();
 
-        DB::beginTransaction();
+        return DB::transaction(function () use ($status, $sender, $actor, $receivedAt, $notes, $properties, $completesLastMovement) {
+            if ($completesLastMovement && $this->movement) {
+                $this->movement->actor_id ??= isset($sender) ? null : $actor?->getKey();
+                $this->movement->actor_type ??= isset($sender) ? null : $actor?->getMorphClass();
+                $this->movement->completed_at ??= $receivedAt;
+                $this->movement->save();
+            }
 
-        if ($completesLastMovement && $this->movement) {
-            $this->movement->actor_id ??= isset($sender) ? null : $actor?->id;
-            $this->movement->actor_type ??= isset($sender) ? null : $actor?->getMorphClass();
-            $this->movement->completed_at ??= $receivedAt;
-            $this->movement->save();
-        }
+            $movement = new (config('kpi.models.movement'))([
+                'previous_id' => $this->movement?->getKey(),
+                'sender_id' => $sender?->getKey(),
+                'sender_type' => $sender?->getMorphClass(),
+                'actor_id' => $actor?->getKey(),
+                'actor_type' => $actor?->getMorphClass(),
+                'received_at' => $receivedAt,
+                'status' => $status,
+                'notes' => $notes,
+                'properties' => $properties ?? [],
+            ]);
 
-        $movement = new (config('kpi.models.movement'))([
-            'previous_id' => $this->movement?->id,
-            'sender_id' => $sender?->id,
-            'sender_type' => $sender?->getMorphClass(),
-            'actor_id' => $actor?->id,
-            'actor_type' => $actor?->getMorphClass(),
-            'received_at' => $receivedAt,
-            'status' => $status,
-            'notes' => $notes,
-            'properties' => $properties ?? [],
-        ]);
+            $movement->movable()->associate($this);
+            $movement->save();
 
-        $movement->movable()->associate($this);
-        $movement->save();
+            event(new Passed($movement, $this->movement));
 
-        event(new Passed($movement, $this->movement));
+            $this->load('movement');
 
-        $this->load('movement');
-
-        DB::commit();
-
-        return $movement;
+            return $movement;
+        });
     }
 
     public function passIfNotCurrent(
@@ -81,7 +79,7 @@ trait InteractsWithMovement
         ?Carbon $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
-        bool $completesLastMovement = true
+        bool $completesLastMovement = true,
     ): Movement|false {
         $same_status = $this->movement?->status === ($status instanceof BackedEnum ? $status->value : $status);
         $same_actor = $this->movement?->actor_type === $actor?->getMorphClass() && $this->movement?->actor_id === $actor?->getKey();
