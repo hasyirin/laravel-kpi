@@ -37,16 +37,19 @@ Five movements open simultaneously on one file. Two roots (#1, #4), one with two
 
 ### Schema additions
 
-`Movement` table gains two columns:
+`Movement` table gains two columns via a **new** migration (not in the create stub — see Migrations below):
 
 ```php
 $table->foreignIdFor($this->model, 'parent_id')
+    ->after('id')
     ->index()
     ->nullable()
     ->constrained((new $this->model)->getTable())
     ->cascadeOnDelete();
 
-$table->boolean('expects_children')->default(false);
+$table->boolean('expects_children')
+    ->after('properties')
+    ->default(false);
 ```
 
 Final shape: `id`, `parent_id` (new, nullable), `previous_id` (existing, nullable), `movable_*`, `sender_*`, `actor_*`, `status`, `period`, `hours`, `notes`, `properties`, `expects_children` (new), `received_at`, `completed_at`, timestamps, soft deletes.
@@ -62,12 +65,20 @@ Final shape: `id`, `parent_id` (new, nullable), `previous_id` (existing, nullabl
 
 ### Migrations
 
-Two artifacts ship in v2.0:
+Two artifacts ship in v2.0, but only **one** of them adds the new columns:
 
-1. **`create_movements_table.php.stub`** — fresh-install stub, includes both `parent_id` and `expects_children` inline.
-2. **`add_parent_child_to_movements_table.php.stub`** — v1→v2 upgrade migration adding both new columns. Existing users publish and run it after upgrading.
+1. **`create_movements_table.php.stub`** — unchanged from v1. Carries the original schema. Fresh installs run this first to create the base table.
+2. **`add_parent_child_to_movements_table.php.stub`** — new migration. Adds `parent_id` and `expects_children` to whatever shape the table currently has. Runs after `create_movements_table` on fresh installs; runs alone on v1→v2 upgrades.
+
+Both stubs are registered with `hasMigrations()` and ship in the package; Spatie's publish flow stamps them with sequential timestamps so they run in array order.
+
+Migration outcomes:
+- **Fresh install (v2):** create_movements_table → add_parent_child_to_movements_table → final v2 schema.
+- **Existing v1 upgrade:** the user already has `create_movements_table` migrated. Re-publishing copies only the new `add_parent_child_to_movements_table` (Spatie skips files that already exist). Running migrate executes only the new one. → final v2 schema.
 
 Existing rows from v1 get `parent_id = null` and `expects_children = false` and behave as roots — matches their pre-upgrade single-chain semantics.
+
+**Why not put the columns in the create stub?** Doing so would mean fresh installs run *both* the create stub (with the columns) and the add stub (re-adding them), causing the second migration to fail with a duplicate-column error. Keeping the create stub at v1 schema makes the add stub the single source of truth for the v2 columns and works identically for fresh installs and upgrades.
 
 ## API surface
 

@@ -37,34 +37,49 @@ trait InteractsWithMovement
         ?Carbon $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
-        bool $completesLastMovement = true,
+        ?bool $supersede = null,
+        bool $expectsChildren = false,
     ): Movement {
         $receivedAt ??= now();
 
-        return DB::transaction(function () use ($status, $sender, $actor, $receivedAt, $notes, $properties, $completesLastMovement) {
-            if ($completesLastMovement && $this->movement) {
-                $this->movement->actor_id ??= isset($sender) ? null : $actor?->getKey();
-                $this->movement->actor_type ??= isset($sender) ? null : $actor?->getMorphClass();
-                $this->movement->completed_at ??= $receivedAt;
-                $this->movement->save();
+        return DB::transaction(function () use (
+            $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren
+        ) {
+            $previous = $this->movements()
+                ->whereNull('parent_id')
+                ->whereNull('completed_at')
+                ->lockForUpdate()
+                ->latest('received_at')
+                ->first();
+
+            $superseded = null;
+
+            if ($previous && $this->shouldSupersedeRoot($previous, $supersede)) {
+                $previous->actor_id ??= isset($sender) ? null : $actor?->getKey();
+                $previous->actor_type ??= isset($sender) ? null : $actor?->getMorphClass();
+
+                // complete() saves with both the actor changes and completed_at in one query
+                $previous->complete($receivedAt);
+                $superseded = $previous;
             }
 
             $movement = new (config('kpi.models.movement'))([
-                'previous_id' => $this->movement?->getKey(),
+                'previous_id' => $previous?->getKey(),
                 'sender_id' => $sender?->getKey(),
                 'sender_type' => $sender?->getMorphClass(),
                 'actor_id' => $actor?->getKey(),
                 'actor_type' => $actor?->getMorphClass(),
                 'received_at' => $receivedAt,
-                'status' => $status,
+                'status' => $status instanceof BackedEnum ? $status->value : $status,
                 'notes' => $notes,
                 'properties' => $properties ?? [],
+                'expects_children' => $expectsChildren,
             ]);
 
             $movement->movable()->associate($this);
             $movement->save();
 
-            event(new Passed($movement, $this->movement));
+            event(new Passed($movement, $superseded));
 
             $this->load('movement');
 
@@ -79,15 +94,40 @@ trait InteractsWithMovement
         ?Carbon $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
-        bool $completesLastMovement = true,
+        ?bool $supersede = null,
+        bool $expectsChildren = false,
     ): Movement|false {
-        $same_status = $this->movement?->status === ($status instanceof BackedEnum ? $status->value : $status);
-        $same_actor = $this->movement?->actor_type === $actor?->getMorphClass() && $this->movement?->actor_id === $actor?->getKey();
+        $latestRoot = $this->movements()
+            ->whereNull('parent_id')
+            ->whereNull('completed_at')
+            ->latest('received_at')
+            ->first();
 
-        if ($same_status && $same_actor) {
+        $statusValue = $status instanceof BackedEnum ? $status->value : $status;
+        $sameStatus = $latestRoot?->status === $statusValue;
+        $sameActor = $latestRoot?->actor_type === $actor?->getMorphClass()
+            && $latestRoot?->actor_id === $actor?->getKey();
+
+        if ($sameStatus && $sameActor) {
             return false;
         }
 
-        return $this->pass($status, $sender, $actor, $receivedAt, $notes, $properties, $completesLastMovement);
+        return $this->pass($status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren);
+    }
+
+    protected function shouldSupersedeRoot(Movement $previous, ?bool $supersede): bool
+    {
+        if ($supersede === false) {
+            return false;
+        }
+        if ($supersede === true) {
+            return true;
+        }
+
+        if ($previous->expects_children) {
+            return false;
+        }
+
+        return $previous->children()->whereNull('completed_at')->doesntExist();
     }
 }

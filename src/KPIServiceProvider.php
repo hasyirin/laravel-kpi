@@ -15,6 +15,7 @@ class KPIServiceProvider extends PackageServiceProvider
             ->hasMigrations([
                 'create_movements_table',
                 'create_holidays_table',
+                'add_parent_child_to_movements_table',
             ]);
     }
 }

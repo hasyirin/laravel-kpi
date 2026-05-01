@@ -20,7 +20,25 @@ interface HasMovement
 
     public function movements(): MorphMany;
 
-    public function pass(BackedEnum|string $status, ?Model $sender = null, ?Model $actor = null, ?Carbon $receivedAt = null, ?string $notes = null, Collection|array|null $properties = null, bool $completesLastMovement = true): Movement;
+    public function pass(
+        BackedEnum|string $status,
+        ?Model $sender = null,
+        ?Model $actor = null,
+        ?Carbon $receivedAt = null,
+        ?string $notes = null,
+        Collection|array|null $properties = null,
+        ?bool $supersede = null,
+        bool $expectsChildren = false,
+    ): Movement;
 
-    public function passIfNotCurrent(BackedEnum|string $status, ?Model $sender = null, ?Model $actor = null, ?Carbon $receivedAt = null, ?string $notes = null, Collection|array|null $properties = null, bool $completesLastMovement = true): Movement|false;
+    public function passIfNotCurrent(
+        BackedEnum|string $status,
+        ?Model $sender = null,
+        ?Model $actor = null,
+        ?Carbon $receivedAt = null,
+        ?string $notes = null,
+        Collection|array|null $properties = null,
+        ?bool $supersede = null,
+        bool $expectsChildren = false,
+    ): Movement|false;
 }

@@ -36,6 +36,7 @@ class TestCase extends Orchestra
         $migrations = [
             'create_holidays_table',
             'create_movements_table',
+            'add_parent_child_to_movements_table',
         ];
 
         foreach ($migrations as $migration) {

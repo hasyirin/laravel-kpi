@@ -29,69 +29,21 @@
 
 ---
 
-## Task 1: Add `parent_id` and `expects_children` columns to fresh-install migration
+## Task 1: Leave `create_movements_table.php.stub` alone
 
 **Files:**
-- Modify: `database/migrations/create_movements_table.php.stub`
-- Test: existing test suite (run after change to verify no regressions)
+- (No changes.)
 
-- [ ] **Step 1: Edit the migration stub**
+The original implementation of this plan modified the create stub to include `parent_id` and `expects_children` inline. That design was reverted because it caused fresh installs to fail: both the create stub and the new `add_parent_child_to_movements_table` stub would publish, and the second migration would error on duplicate columns.
 
-Open `database/migrations/create_movements_table.php.stub`. Inside the `Schema::create` callback, immediately after `$table->id();`, insert the new columns. The result should look like:
+Final design: the create stub stays at v1 schema. The new columns are added by `add_parent_child_to_movements_table` only. Fresh installs run both migrations sequentially; v1 upgraders run only the new one. See Task 2 and the spec's Migrations section.
 
-```php
-public function up(): void
-{
-    Schema::create($this->table, function (Blueprint $table) {
-        $table->id();
+This task is therefore a no-op. Verify the file is unchanged from v1:
 
-        $table->foreignIdFor($this->model, 'parent_id')
-            ->index()
-            ->nullable()
-            ->constrained((new $this->model)->getTable())
-            ->cascadeOnDelete();
+- [ ] **Step 1: Verify create stub is at v1 schema**
 
-        $table->foreignIdFor($this->model, 'previous_id')
-            ->index()
-            ->nullable()
-            ->constrained((new $this->model)->getTable())
-            ->cascadeOnDelete();
-
-        $table->morphs('movable');
-
-        $table->nullableMorphs('sender');
-        $table->nullableMorphs('actor');
-
-        $table->string('status');
-
-        $table->decimal('period', places: 4)->unsigned()->nullable();
-        $table->decimal('hours', places: 4)->unsigned()->nullable();
-
-        $table->text('notes')->nullable();
-        $table->json('properties');
-
-        $table->boolean('expects_children')->default(false);
-
-        $table->timestamp('received_at')->nullable();
-        $table->timestamp('completed_at')->nullable();
-
-        $table->timestamps();
-        $table->softDeletes();
-    });
-}
-```
-
-- [ ] **Step 2: Run existing tests to verify no regressions**
-
-Run: `vendor/bin/pest`
-Expected: All 87 existing tests still pass — column defaults (`null` for `parent_id`, `false` for `expects_children`) don't affect current behavior because no code reads them yet.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add database/migrations/create_movements_table.php.stub
-git commit -m "feat: add parent_id and expects_children columns to movements table"
-```
+Run: `grep -E "parent_id|expects_children" database/migrations/create_movements_table.php.stub`
+Expected: NO matches.
 
 ---
 
@@ -128,11 +80,10 @@ return new class extends Migration
         Schema::table($this->table, function (Blueprint $table) {
             $table->foreignIdFor($this->model, 'parent_id')
                 ->after('id')
+                ->index()
                 ->nullable()
                 ->constrained((new $this->model)->getTable())
                 ->cascadeOnDelete();
-
-            $table->index('parent_id');
 
             $table->boolean('expects_children')
                 ->after('properties')
@@ -159,15 +110,31 @@ Look at how the existing migration is published, then add the new one with the s
 
 If the provider publishes a directory rather than individual files, no edit needed here — the new stub is auto-included. Verify by running `php artisan vendor:publish --tag=laravel-kpi-migrations --force` in a Testbench shell or by reading `KPIServiceProvider::boot()`.
 
-- [ ] **Step 3: Run existing tests**
+- [ ] **Step 3: Update `tests/TestCase.php` to load the upgrade migration**
+
+The test environment must mirror real-world fresh installs (which run create then add). Edit `tests/TestCase.php::getEnvironmentSetUp()`:
+
+```php
+$migrations = [
+    'create_holidays_table',
+    'create_movements_table',
+    'add_parent_child_to_movements_table',
+];
+
+foreach ($migrations as $migration) {
+    (include __DIR__.'/../database/migrations/'.$migration.'.php.stub')->up();
+}
+```
+
+- [ ] **Step 4: Run existing tests**
 
 Run: `vendor/bin/pest`
-Expected: All tests still pass. The upgrade stub is not invoked by `tests/TestCase.php::getEnvironmentSetUp()` (which only loads `create_movements_table`), so it has no test impact.
+Expected: All 87 existing tests still pass. The new column defaults (`null` for `parent_id`, `false` for `expects_children`) don't affect existing behavior because no code reads them yet.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add database/migrations/add_parent_child_to_movements_table.php.stub src/KPIServiceProvider.php
+git add database/migrations/add_parent_child_to_movements_table.php.stub src/KPIServiceProvider.php tests/TestCase.php
 git commit -m "feat: add v1→v2 upgrade migration for parent_id and expects_children"
 ```
 
