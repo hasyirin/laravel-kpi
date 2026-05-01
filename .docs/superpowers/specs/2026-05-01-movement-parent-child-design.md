@@ -37,7 +37,7 @@ Five movements open simultaneously on one file. Two roots (#1, #4), one with two
 
 ### Schema additions
 
-`Movement` table gains one column:
+`Movement` table gains two columns:
 
 ```php
 $table->foreignIdFor($this->model, 'parent_id')
@@ -45,9 +45,11 @@ $table->foreignIdFor($this->model, 'parent_id')
     ->nullable()
     ->constrained((new $this->model)->getTable())
     ->cascadeOnDelete();
+
+$table->boolean('expects_children')->default(false);
 ```
 
-Final shape: `id`, `parent_id` (new, nullable), `previous_id` (existing, nullable), `movable_*`, `sender_*`, `actor_*`, `status`, `period`, `hours`, `notes`, `properties`, `received_at`, `completed_at`, timestamps, soft deletes.
+Final shape: `id`, `parent_id` (new, nullable), `previous_id` (existing, nullable), `movable_*`, `sender_*`, `actor_*`, `status`, `period`, `hours`, `notes`, `properties`, `expects_children` (new), `received_at`, `completed_at`, timestamps, soft deletes.
 
 ### Field meanings
 
@@ -56,15 +58,16 @@ Final shape: `id`, `parent_id` (new, nullable), `previous_id` (existing, nullabl
   - For a root: most recent open root before this one on the same resource (or null).
   - For a child: most recent open sibling under the same parent before this one (or null).
   - Set whether or not supersession actually happened.
+- **`expects_children`** — opt-in flag marking a movement as a planned branch point. When `true`, the movement is protected from auto-supersession even if it currently has no open children. **Sticky:** once set, the flag stays for the row's lifetime; it is not auto-cleared when children arrive or close. See `supersede` semantics below.
 
 ### Migrations
 
 Two artifacts ship in v2.0:
 
-1. **`create_movements_table.php.stub`** — fresh-install stub, includes `parent_id` inline.
-2. **`add_parent_id_to_movements_table.php.stub`** — v1→v2 upgrade migration. Existing users publish and run it after upgrading.
+1. **`create_movements_table.php.stub`** — fresh-install stub, includes both `parent_id` and `expects_children` inline.
+2. **`add_parent_child_to_movements_table.php.stub`** — v1→v2 upgrade migration adding both new columns. Existing users publish and run it after upgrading.
 
-Existing rows from v1 get `parent_id = null` and behave as roots — matches their pre-upgrade single-chain semantics.
+Existing rows from v1 get `parent_id = null` and `expects_children = false` and behave as roots — matches their pre-upgrade single-chain semantics.
 
 ## API surface
 
@@ -79,14 +82,16 @@ public function pass(
     ?string $notes = null,
     Collection|array|null $properties = null,
     ?bool $supersede = null,
+    bool $expectsChildren = false,
 ): Movement;
 ```
 
 - Always creates a root (`parent_id = null`).
 - `previous_id` = most recent open root on the resource (by `received_at`), or null.
+- `expectsChildren` is persisted to the new movement's `expects_children` column.
 - `supersede` semantics:
-  - `null` (default): close previous root **iff** it has no *open* children. A root whose children are all closed is treated as a leaf and auto-supersedes.
-  - `true`: always close previous root (cascades through any open descendants via `complete()`).
+  - `null` (default): close previous root **iff** `(no open children) AND (expects_children == false)`. A root with `expects_children = true` is preserved even when childless.
+  - `true`: always close previous root (cascades through any open descendants via `complete()`). Overrides `expects_children`.
   - `false`: never close; new concurrent root.
 
 ### `$movement->pass(...)` (child)
@@ -95,9 +100,10 @@ Same signature.
 
 - Always creates a child of the receiver (`parent_id = $movement->id`, `movable_*` copied from receiver).
 - `previous_id` = most recent open child of the receiver (by `received_at`), or null.
-- `supersede` semantics:
-  - `null` (default): close previous open sibling **iff** it has no *open* children of its own.
-  - `true`: always close it (cascades through any open descendants).
+- `expectsChildren` is persisted to the new child's `expects_children` column. Useful when the new child is itself meant to become a parent later.
+- `supersede` semantics (mirror of root rule, applied to siblings):
+  - `null` (default): close previous open sibling **iff** `(no open children) AND (expects_children == false)`.
+  - `true`: always close it (cascades through any open descendants). Overrides `expects_children`.
   - `false`: never close; new concurrent sibling.
 - Receiver itself never auto-completes.
 
@@ -312,12 +318,18 @@ The 87 passing tests cover single-chain semantics. Several `MovementTest` cases 
 2. **Multiple roots:** Calling `$file->pass()` twice with `supersede: false` creates two roots. Both appear in `$file->movements`. `$file->movement` returns latest open of any depth.
 3. **Supersede matrix:** All three values (`null`, `true`, `false`) on both receivers, with leaf and non-leaf priors.
 4. **`complete()` cascade:** Closing a parent with multiple levels of open descendants closes all of them with the same `completed_at`. Each gets its own `period`/`hours`.
-5. **Events:**
+5. **`expects_children` flag:**
+   - Persisted from `expectsChildren: true` parameter on both `pass()` receivers.
+   - Childless root with `expects_children = true` is preserved when next `$file->pass(supersede: null)` runs.
+   - Childless sibling with `expects_children = true` is preserved when next `$movement->pass(supersede: null)` runs on the same parent.
+   - Sticky: flag remains `true` after children are added and after they close.
+   - `supersede: true` overrides the flag (previous closes anyway, cascading through descendants).
+6. **Events:**
    - `Passed::$previous` is null when supersede skipped, set when supersession fired.
    - `Completed` fires once per closed movement, including cascaded descendants (assert count == subtree size).
-6. **End-to-end integration:** Replay the worked example trace and assert the resulting tree shape, `previous_id` chain, and open/closed states.
-7. **`previous_id` semantics:** Roots track most-recent-open-root. Children track most-recent-open-sibling. Set whether or not supersession happened.
-8. **`passIfNotCurrent` on both receivers:** Returns `false` when status+actor match the relevant scope (root for model, sibling for movement).
+7. **End-to-end integration:** Replay the worked example trace and assert the resulting tree shape, `previous_id` chain, and open/closed states.
+8. **`previous_id` semantics:** Roots track most-recent-open-root. Children track most-recent-open-sibling. Set whether or not supersession happened.
+9. **`passIfNotCurrent` on both receivers:** Returns `false` when status+actor match the relevant scope (root for model, sibling for movement).
 
 Skipping explicit concurrency tests for `lockForUpdate()` — hard to assert reliably in unit tests. Document the lock and trust DB semantics.
 
@@ -326,7 +338,7 @@ Skipping explicit concurrency tests for `lockForUpdate()` — hard to assert rel
 1. `completesLastMovement: bool` parameter on `pass()` removed. Replaced with `supersede: ?bool` (tri-state, smarter default).
 2. `$file->pass()` no longer auto-completes prior open movement by default. Use `supersede: true` to preserve old single-chain behavior, or call `$movement->complete()` explicitly.
 3. `$file->movement` semantics widened: now returns latest open movement of any depth (could be a root or a child).
-4. New migration required: publish and run `add_parent_id_to_movements_table.php.stub`.
+4. New migration required: publish and run `add_parent_child_to_movements_table.php.stub` (adds `parent_id` and `expects_children`).
 5. `Passed::$previous` is now `null` when no supersession happened.
 
 ## Non-breaking additions
@@ -335,4 +347,5 @@ Skipping explicit concurrency tests for `lockForUpdate()` — hard to assert rel
 - `$movement->complete()` — new, closes a movement and cascades through descendants.
 - `$movement->parent`, `$movement->children` — new relations.
 - Movement scopes: `roots`, `open`, `closed`.
+- `expectsChildren: bool = false` — new optional parameter on both `pass()` receivers (and corresponding `expects_children` column on `movements`).
 - `Hasyirin\KPI\Events\Completed` — new event.
