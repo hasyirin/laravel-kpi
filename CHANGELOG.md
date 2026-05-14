@@ -2,6 +2,17 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## v1.1.0 - 2026-05-14
+
+### Changes
+
+- Hardened movement tracking and KPI calculation (`db60f7d`)
+- Rewrote README (`db60f7d`)
+- Removed `parent_id` column, relationships, and fillable entry from `Movement` (`885cc91`) — note: reintroduced with new semantics in v2.0.0
+- Dependency updates (dependabot, checkout, composer-install, etc.)
+
+**Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v1.0.0...v1.1.0
+
 ## v1.0.0 — Laravel 11/12/13 support, PHP 8.3+ - 2026-05-14
 
 Initial release.
