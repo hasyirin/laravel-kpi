@@ -2,6 +2,27 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## v3.0.0 — drop PHP 8.3 and Laravel 11 support - 2026-05-14
+
+Maintenance release that raises the minimum runtime requirements. No API or behaviour changes; consumers on supported versions can upgrade with no code changes.
+
+### Breaking changes
+
+- Minimum PHP raised from 8.3 to **8.4**.
+- Minimum Laravel raised from 11 to **12**. Laravel 12 and 13 are now the supported versions; `illuminate/contracts` is constrained to `^12.0||^13.0`.
+- `orchestra/testbench` dev requirement narrowed to `^10.0||^11.0` (testbench 9 dropped alongside Laravel 11).
+
+### Internal
+
+- CI matrix now tests PHP 8.4 and 8.5 against Laravel 12 and 13 (both `prefer-lowest` and `prefer-stable`); PHPStan job bumped to PHP 8.4.
+
+### Upgrade guide (v2 → v3)
+
+1. Ensure your app runs PHP 8.4+ and Laravel 12+.
+2. `composer require hasyirin/laravel-kpi:^3.0`
+
+**Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v2.0.0...v3.0.0
+
 ## v3.0.0 — drop PHP 8.3 and Laravel 11 - 2026-05-15
 
 Maintenance release that raises the minimum runtime requirements. No API or behaviour changes; consumers on supported versions can upgrade with no code changes.
