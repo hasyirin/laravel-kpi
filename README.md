@@ -11,8 +11,8 @@ Given a start and end timestamp, `laravel-kpi` computes the *effective* working 
 
 ## Requirements
 
-- PHP 8.3+
-- Laravel 11, 12, or 13
+- PHP 8.4+
+- Laravel 12 or 13
 - `ext-bcmath`
 
 ## Installation
