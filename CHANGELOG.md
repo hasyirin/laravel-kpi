@@ -2,6 +2,13 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## v1.0.0 — Laravel 11/12/13 support, PHP 8.3+ - 2026-05-14
+
+Initial release.
+
+- Laravel 11, 12, and 13 support
+- PHP 8.3+
+
 ## v2.0.0
 
 ### Breaking changes
