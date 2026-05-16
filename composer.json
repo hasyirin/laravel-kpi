@@ -1,6 +1,6 @@
 {
     "name": "hasyirin/laravel-kpi",
-    "description": "This is my package laravel-kpi",
+    "description": "Measure turnaround time against a working schedule, and track status transitions (movements) on any Eloquent model.",
     "keywords": [
         "Hasyirin Fakhriy",
         "laravel",
