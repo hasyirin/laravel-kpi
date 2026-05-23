@@ -6,7 +6,6 @@ use Carbon\CarbonImmutable;
 use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Data\KPIMetadata;
 use Hasyirin\KPI\Data\WorkSchedule;
-use Hasyirin\KPI\Models\Holiday;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
 
@@ -29,7 +28,7 @@ class KPI
 
         $excludeDates = collect([
             ...collect($excludeDates)->map(fn (Carbon|string $date) => Carbon::parse($date)),
-            ...Holiday::query()->range($start, $end)->pluck('date'),
+            ...config('kpi.models.holiday')::query()->range($start, $end)->pluck('date'),
         ]);
 
         $minutes = 0;
