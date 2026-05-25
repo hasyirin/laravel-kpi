@@ -2,7 +2,6 @@
 
 use Hasyirin\KPI\Models\Holiday;
 use Hasyirin\KPI\Models\RecurringHoliday;
-use Illuminate\Support\Carbon;
 
 it('persists observes_substitute on Holiday', function () {
     $holiday = Holiday::create([

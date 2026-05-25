@@ -6,6 +6,7 @@ use Hasyirin\KPI\Data\WorkSchedule;
 use Hasyirin\KPI\Enums\Day;
 use Hasyirin\KPI\Facades\KPI;
 use Hasyirin\KPI\Models\Holiday;
+use Hasyirin\KPI\Models\RecurringHoliday;
 use Illuminate\Support\Carbon;
 
 // --- Holiday exclusion ---
@@ -156,8 +157,6 @@ it('clamps end time to work end when leaving late', function () {
 
     expect($kpi->minutes)->toBe(120.0);
 });
-
-use Hasyirin\KPI\Models\RecurringHoliday;
 
 it('excludes a recurring holiday on the same month/day in each year of the range', function () {
     // Labour Day May 1 — recurring annually
