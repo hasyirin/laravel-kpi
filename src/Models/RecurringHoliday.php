@@ -65,8 +65,7 @@ class RecurringHoliday extends Model
         return collect(range($start->year, $end->year))
             ->filter(fn (int $year) => checkdate($this->month, $this->day, $year))
             ->map(fn (int $year) => Carbon::create($year, $this->month, $this->day))
-            ->filter(fn (Carbon $date) =>
-                (! $this->effective_from || $date->gte($this->effective_from)) &&
+            ->filter(fn (Carbon $date) => (! $this->effective_from || $date->gte($this->effective_from)) &&
                 (! $this->effective_until || $date->lte($this->effective_until)) &&
                 $date->between($start, $end)
             )
