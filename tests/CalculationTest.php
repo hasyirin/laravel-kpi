@@ -218,3 +218,147 @@ it('combines one-off and recurring holidays', function () {
     // May 1 (Thu, one-off) + May 2 (Fri, recurring) excluded; May 3-4 unscheduled weekend
     expect($kpi->metadata->excluded)->toBe(2);
 });
+
+// --- Substitute day resolution ---
+
+it('does not substitute when observes_substitute is false by default', function () {
+    config(['kpi.substitute' => [Day::SUNDAY->value]]);
+
+    // Sun 2025-05-04 — non-working in default Mon-Fri schedule
+    Holiday::create(['name' => 'Sun Holiday', 'date' => '2025-05-04']);
+
+    $kpi = KPI::calculate(Carbon::parse('2025-05-02 08:00'), Carbon::parse('2025-05-06 17:00'));
+
+    // No substitute → Monday May 5 stays scheduled (not excluded)
+    expect($kpi->metadata->excluded)->toBe(0);
+});
+
+it('does not substitute when the day-of-week is not in kpi.substitute', function () {
+    config(['kpi.substitute' => []]);   // empty config
+
+    Holiday::create(['name' => 'Sun Holiday', 'date' => '2025-05-04', 'observes_substitute' => true]);
+
+    $kpi = KPI::calculate(Carbon::parse('2025-05-02 08:00'), Carbon::parse('2025-05-06 17:00'));
+
+    // observes_substitute=true but Sunday not eligible → no substitute
+    expect($kpi->metadata->excluded)->toBe(0);
+});
+
+it('substitutes Sunday holiday to Monday under Sat-Sun config', function () {
+    config(['kpi.substitute' => [Day::SUNDAY->value]]);
+    // Default schedule is Mon-Fri working.
+
+    Holiday::create(['name' => 'Sun', 'date' => '2025-05-04', 'observes_substitute' => true]);
+
+    $kpi = KPI::calculate(Carbon::parse('2025-05-02 08:00'), Carbon::parse('2025-05-06 17:00'));
+
+    // Sun substituted to Mon May 5 → Mon excluded
+    expect($kpi->metadata->excluded)->toBe(1);
+});
+
+it('substitutes Saturday holiday to Sunday under Kelantan/Terengganu config', function () {
+    config(['kpi.substitute' => [Day::SATURDAY->value]]);
+
+    // Sun-Thu schedule; Fri-Sat off.
+    $schedules = collect([
+        Day::SUNDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::MONDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::TUESDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::WEDNESDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::THURSDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+    ]);
+
+    // Sat 2025-05-03
+    Holiday::create(['name' => 'Sat', 'date' => '2025-05-03', 'observes_substitute' => true]);
+
+    $kpi = KPI::calculate(
+        Carbon::parse('2025-05-02 08:00'),  // Fri (off)
+        Carbon::parse('2025-05-06 17:00'),  // Tue
+        schedules: $schedules,
+    );
+
+    // Sat substituted to Sun May 4 → Sun excluded
+    expect($kpi->metadata->excluded)->toBe(1);
+});
+
+it('substitutes Friday holiday past Saturday to Sunday under Kedah config', function () {
+    config(['kpi.substitute' => [Day::FRIDAY->value]]);
+
+    $schedules = collect([
+        Day::SUNDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::MONDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::TUESDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::WEDNESDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::THURSDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+    ]);
+
+    // Fri 2025-05-02
+    Holiday::create(['name' => 'Fri', 'date' => '2025-05-02', 'observes_substitute' => true]);
+
+    $kpi = KPI::calculate(
+        Carbon::parse('2025-04-30 08:00'),  // Wed
+        Carbon::parse('2025-05-06 17:00'),  // Tue
+        schedules: $schedules,
+    );
+
+    // Fri → skip Sat (off) → Sun May 4 (working in Kedah schedule) → Sun excluded
+    expect($kpi->metadata->excluded)->toBe(1);
+});
+
+it('collapses collision when Sat substitutes onto Sunday holiday in Terengganu', function () {
+    config(['kpi.substitute' => [Day::SATURDAY->value]]);
+
+    $schedules = collect([
+        Day::SUNDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::MONDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::TUESDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::WEDNESDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+        Day::THURSDAY->value => WorkSchedule::parse(['8:00', '17:00']),
+    ]);
+
+    Holiday::create(['name' => 'Sat', 'date' => '2025-05-03', 'observes_substitute' => true]);
+    Holiday::create(['name' => 'Sun', 'date' => '2025-05-04']);   // observes_substitute=false (Sun not eligible anyway)
+
+    $kpi = KPI::calculate(
+        Carbon::parse('2025-05-02 08:00'),
+        Carbon::parse('2025-05-06 17:00'),
+        schedules: $schedules,
+    );
+
+    // Sat sub → Sun. Sun raw also there. Collision → Sun excluded ONCE. Mon stays scheduled.
+    expect($kpi->metadata->excluded)->toBe(1);
+});
+
+it('does not substitute when the raw day is a working day, even if in kpi.substitute', function () {
+    // Misconfig: someone put Wednesday (a working day) in substitute config.
+    config(['kpi.substitute' => [Day::WEDNESDAY->value]]);
+
+    Holiday::create(['name' => 'Wed', 'date' => '2025-04-30', 'observes_substitute' => true]);   // Wed
+
+    $kpi = KPI::calculate(Carbon::parse('2025-04-29 08:00'), Carbon::parse('2025-05-02 17:00'));
+
+    // Wed is working → guard blocks substitute → Wed itself excluded (1), not Thu
+    expect($kpi->metadata->excluded)->toBe(1);
+});
+
+it('substitutes a recurring holiday occurrence per year independently', function () {
+    config(['kpi.substitute' => [Day::SUNDAY->value]]);
+
+    // National Day Aug 31 — recurring annually, observes substitute.
+    RecurringHoliday::create([
+        'name' => 'National Day',
+        'month' => 8,
+        'day' => 31,
+        'observes_substitute' => true,
+    ]);
+
+    // 2025-08-31 is a Sunday — substituted to Mon Sep 1.
+    // 2026-08-31 is a Monday — no substitute needed (Mon is working).
+    $kpi2025 = KPI::calculate(Carbon::parse('2025-08-29 08:00'), Carbon::parse('2025-09-02 17:00'));
+    $kpi2026 = KPI::calculate(Carbon::parse('2026-08-30 08:00'), Carbon::parse('2026-09-01 17:00'));
+
+    // 2025: Aug 31 (Sun, unscheduled) + Sep 1 (Mon, excluded via substitute) → excluded = 1
+    // 2026: Aug 31 (Mon, excluded directly) → excluded = 1
+    expect($kpi2025->metadata->excluded)->toBe(1)
+        ->and($kpi2026->metadata->excluded)->toBe(1);
+});

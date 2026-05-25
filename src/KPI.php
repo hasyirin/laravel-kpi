@@ -52,7 +52,31 @@ class KPI
                 'observes_substitute' => (bool) $r->observes_substitute,
             ]));
 
-        $observedDates = $oneOffOccurrences->concat($recurringOccurrences)->pluck('date');
+        $substituteDays = collect(config('kpi.substitute', []))->flip();
+
+        $observedDates = $oneOffOccurrences
+            ->concat($recurringOccurrences)
+            ->map(function (array $occ) use ($schedules, $substituteDays) {
+                $date = $occ['date'];
+
+                if ($occ['observes_substitute']
+                    && $substituteDays->has($date->dayOfWeek)
+                    && empty($schedules[$date->dayOfWeek])
+                ) {
+                    $i = 0;
+                    for (; $i < 7; $i++) {
+                        $date = $date->addDay();
+                        if (! empty($schedules[$date->dayOfWeek])) {
+                            break;
+                        }
+                    }
+                    if ($i === 7) {
+                        $date = $occ['date'];   // safety fall-back: degenerate schedule
+                    }
+                }
+
+                return $date;
+            });
 
         $excludeDates = collect([
             ...collect($excludeDates)->map(fn (Carbon|string $date) => Carbon::parse($date)),
