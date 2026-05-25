@@ -294,7 +294,7 @@ class Movement extends Model
 
     public function formattedReceivedAt(): Attribute
     {
-        return Attribute::make(get: fn () => $this->received_at?->format(config('kpi.formats.datetime')));
+        return Attribute::make(get: fn () => $this->received_at->format(config('kpi.formats.datetime')));
     }
 
     public function scopeOpen(Builder $query): void
