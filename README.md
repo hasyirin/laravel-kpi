@@ -122,7 +122,11 @@ $kpi = KPI::calculate(
 
 ## Holidays
 
-`Holiday` is a regular Eloquent model with `name` and `date` fillables and a `range()` scope:
+The package recognizes two kinds of holiday rows, both contributing to exclusion in `KPI::calculate()`.
+
+### One-off holidays
+
+`Holiday` is a regular Eloquent model:
 
 ```php
 use Hasyirin\KPI\Models\Holiday;
@@ -131,6 +135,76 @@ Holiday::create(['name' => 'New Year', 'date' => '2025-01-01']);
 
 Holiday::query()->range('2025-01-01', '2025-12-31')->get();
 ```
+
+### Recurring (fixed annual) holidays
+
+For holidays that fall on the same gregorian month/day every year (Labour Day = May 1, Malaysian National Day = Aug 31), use `RecurringHoliday`:
+
+```php
+use Hasyirin\KPI\Models\RecurringHoliday;
+
+RecurringHoliday::create([
+    'name' => 'Labour Day',
+    'month' => 5,
+    'day' => 1,
+]);
+```
+
+The calculator expands these to a concrete date for each year intersecting the calc range. `Feb 29` is silently skipped in non-leap years.
+
+#### Validity windows
+
+`effective_from` and `effective_until` bound when the rule applies. Use them when a holiday was established or retired mid-stream — a 2015 calc should still exclude a holiday that ran 2010–2024, but a 2026 calc should not.
+
+```php
+RecurringHoliday::create([
+    'name' => 'Old Festival',
+    'month' => 6,
+    'day' => 15,
+    'effective_from' => '2010-01-01',
+    'effective_until' => '2024-12-31',
+]);
+```
+
+Both bounds are nullable; null = unbounded.
+
+### Substitute day (next-working-day observance)
+
+Both `Holiday` and `RecurringHoliday` carry an `observes_substitute` boolean. When `true` AND the row's day-of-week is listed in `config('kpi.substitute')` AND that day is non-working in the active schedule, the calculator observes the holiday on the next working day instead.
+
+Substitute eligibility is configured at the package level because the same weekly schedule can have different substitute policies (Kelantan/Terengganu and Kedah both work Sun-Thu, but Kelantan substitutes a Saturday holiday while Kedah substitutes a Friday one):
+
+```php
+// config/kpi.php
+
+// Most of Malaysia (Mon-Fri working, Sat-Sun off):
+'substitute' => [Day::SUNDAY->value],
+
+// Kelantan, Terengganu (Sun-Thu working, Fri-Sat off):
+'substitute' => [Day::SATURDAY->value],
+
+// Kedah (Sun-Thu working, Fri-Sat off):
+'substitute' => [Day::FRIDAY->value],
+```
+
+```php
+RecurringHoliday::create([
+    'name' => 'Labour Day',
+    'month' => 5,
+    'day' => 1,
+    'observes_substitute' => true,
+]);
+```
+
+#### Multi-day skip and collisions
+
+If the day immediately after the holiday is also non-working, the calculator keeps advancing until it finds a working day (Kedah's `Fri → Sat (off) → Sun` case is the canonical example).
+
+The package does NOT chain substitutes through other holidays — if a substituted holiday lands on a day that is itself a holiday, both observe that same day (the calc loop dedups). If you want explicit chained observance (e.g., the federal Malaysian "next working day if Monday is also a public holiday" rule), add the chained day as its own one-off row.
+
+#### Note on historical calculations
+
+`Movement::saving` stores `period` and `hours` at completion time. Past completed movements are frozen — adding a new holiday row does NOT retroactively change them. This is intentional: a holiday introduced in 2026 should not be assumed to have existed in 2020.
 
 ## Tracking movements on a model
 
