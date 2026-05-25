@@ -2,6 +2,36 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## v3.1.0 — fixed/recurring public holidays + substitute-day support - 2026-05-26
+
+Minor release adding annually recurring public holidays and an opt-in next-working-day substitution mechanism. Fully additive — existing consumers see no behavior change until they populate new data or set the new config.
+
+### Added
+
+- `RecurringHoliday` model + `recurring_holidays` table for annually recurring holidays (e.g., Labour Day = May 1, Malaysian National Day = Aug 31). `effective_from` / `effective_until` bound applicability so retired holidays still count for historical KPI calcs but not current ones. Feb 29 is silently skipped in non-leap years.
+- `observes_substitute` column on both `holidays` and `recurring_holidays`. When `true` AND the row's day-of-week is listed in `kpi.substitute` AND that day is non-working in the active schedule, the calculator observes the holiday on the next working day. Multi-day skips (Kedah `Fri → Sat (off) → Sun`) supported; no chain-forward through other holidays — collisions collapse onto the same day.
+- `kpi.substitute` config key: list of day-of-week values eligible for substitution. Default empty = no substitution. Malaysian state examples documented in `config/kpi.php` and the README.
+
+### Fixed
+
+- `KPI::calculate()` now resolves the holiday model via `config('kpi.models.holiday')` instead of hardcoding `Hasyirin\KPI\Models\Holiday::class`. Consumers who override the holiday model now have it honored at calc time.
+- `Holiday::getTable()` now honors `config('kpi.tables.holidays')` (parity with the migration, which already did). `RecurringHoliday::getTable()` follows the same pattern.
+- Removed a redundant nullsafe operator on the non-nullable `Movement::received_at` accessor.
+
+### Internal
+
+- Test suite expanded from 124 to 149 tests covering recurring expansion, substitute resolution across the three Malaysian state configurations (Sat-Sun states, Kelantan/Terengganu, Kedah), validity windows, leap-year handling, collision behavior, and the misconfiguration guard.
+
+### Upgrade guide (v3.0 → v3.1)
+
+1. `composer update hasyirin/laravel-kpi`
+2. `php artisan vendor:publish --tag="laravel-kpi-migrations"`
+3. `php artisan migrate`
+4. (Optional) Re-publish config to see the new `recurring_holidays`, `recurring_holiday`, and `substitute` keys: `php artisan vendor:publish --tag="laravel-kpi-config" --force` — or manually merge them into your existing `config/kpi.php`.
+5. Consumers who've overridden `kpi.models.holiday` with a custom subclass must add `observes_substitute` to its `$fillable` and `$casts`.
+
+**Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v3.0.0...v3.1.0
+
 ## v3.0.0 — drop PHP 8.3 and Laravel 11 support - 2026-05-14
 
 Maintenance release that raises the minimum runtime requirements. No API or behaviour changes; consumers on supported versions can upgrade with no code changes.
