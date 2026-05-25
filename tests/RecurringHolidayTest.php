@@ -81,3 +81,60 @@ it('effectiveIn includes rows whose window partially overlaps the range', functi
 
     expect($results)->toHaveCount(1);
 });
+
+it('occurrencesIn expands one date per year in range', function () {
+    $h = RecurringHoliday::factory()->create(['month' => 5, 'day' => 1]);
+
+    $dates = $h->occurrencesIn('2023-01-01', '2025-12-31');
+
+    expect($dates)->toHaveCount(3)
+        ->and($dates[0]->format('Y-m-d'))->toBe('2023-05-01')
+        ->and($dates[1]->format('Y-m-d'))->toBe('2024-05-01')
+        ->and($dates[2]->format('Y-m-d'))->toBe('2025-05-01');
+});
+
+it('occurrencesIn skips Feb 29 in non-leap years', function () {
+    $h = RecurringHoliday::factory()->create(['month' => 2, 'day' => 29]);
+
+    $dates = $h->occurrencesIn('2023-01-01', '2026-12-31');
+
+    // 2024 is leap; 2023, 2025, 2026 are not.
+    expect($dates)->toHaveCount(1)
+        ->and($dates[0]->format('Y-m-d'))->toBe('2024-02-29');
+});
+
+it('occurrencesIn honors effective_from', function () {
+    $h = RecurringHoliday::factory()->create([
+        'month' => 5,
+        'day' => 1,
+        'effective_from' => '2024-06-15',  // after May 1 2024, so 2024 occurrence excluded
+    ]);
+
+    $dates = $h->occurrencesIn('2023-01-01', '2025-12-31');
+
+    expect($dates)->toHaveCount(1)
+        ->and($dates[0]->format('Y-m-d'))->toBe('2025-05-01');
+});
+
+it('occurrencesIn honors effective_until', function () {
+    $h = RecurringHoliday::factory()->create([
+        'month' => 5,
+        'day' => 1,
+        'effective_until' => '2024-12-31',
+    ]);
+
+    $dates = $h->occurrencesIn('2023-01-01', '2025-12-31');
+
+    expect($dates)->toHaveCount(2)
+        ->and($dates[0]->format('Y-m-d'))->toBe('2023-05-01')
+        ->and($dates[1]->format('Y-m-d'))->toBe('2024-05-01');
+});
+
+it('occurrencesIn returns empty for an out-of-range query', function () {
+    $h = RecurringHoliday::factory()->create(['month' => 5, 'day' => 1]);
+
+    // May 1 not in Jan range.
+    $dates = $h->occurrencesIn('2025-01-01', '2025-01-31');
+
+    expect($dates)->toBeEmpty();
+});

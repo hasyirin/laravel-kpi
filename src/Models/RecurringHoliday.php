@@ -9,6 +9,15 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
+/**
+ * @property int $id
+ * @property string $name
+ * @property int $month
+ * @property int $day
+ * @property bool $observes_substitute
+ * @property ?Carbon $effective_from
+ * @property ?Carbon $effective_until
+ */
 class RecurringHoliday extends Model
 {
     use HasFactory, SoftDeletes;
@@ -48,5 +57,19 @@ class RecurringHoliday extends Model
             ->where(fn (Builder $q) => $q->whereNull('effective_until')->orWhereDate('effective_until', '>=', $start));
     }
 
-    // occurrencesIn added via TDD in Task 11
+    public function occurrencesIn(Carbon|string $start, Carbon|string $end): Collection
+    {
+        $start = Carbon::parse($start);
+        $end = Carbon::parse($end);
+
+        return collect(range($start->year, $end->year))
+            ->filter(fn (int $year) => checkdate($this->month, $this->day, $year))
+            ->map(fn (int $year) => Carbon::create($year, $this->month, $this->day))
+            ->filter(fn (Carbon $date) =>
+                (! $this->effective_from || $date->gte($this->effective_from)) &&
+                (! $this->effective_until || $date->lte($this->effective_until)) &&
+                $date->between($start, $end)
+            )
+            ->values();
+    }
 }
