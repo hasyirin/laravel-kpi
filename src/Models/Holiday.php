@@ -14,12 +14,14 @@ class Holiday extends Model
     protected $fillable = [
         'name',
         'date',
+        'observes_substitute',
     ];
 
     protected function casts(): array
     {
         return [
             'date' => 'date',
+            'observes_substitute' => 'boolean',
         ];
     }
 
