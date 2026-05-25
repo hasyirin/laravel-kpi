@@ -13,3 +13,15 @@ it('persists observes_substitute on Holiday', function () {
 
     expect($holiday->fresh()->observes_substitute)->toBeTrue();
 });
+
+it('honors config(kpi.tables.holidays) override on Holiday', function () {
+    config(['kpi.tables.holidays' => 'my_custom_holidays']);
+
+    expect((new Holiday)->getTable())->toBe('my_custom_holidays');
+});
+
+it('honors config(kpi.tables.recurring_holidays) override on RecurringHoliday', function () {
+    config(['kpi.tables.recurring_holidays' => 'my_custom_recurring']);
+
+    expect((new RecurringHoliday)->getTable())->toBe('my_custom_recurring');
+});

@@ -25,6 +25,11 @@ class Holiday extends Model
         ];
     }
 
+    public function getTable(): string
+    {
+        return config('kpi.tables.holidays', parent::getTable());
+    }
+
     public function scopeRange(Builder $query, Carbon|string $start, Carbon|string|null $end = null): void
     {
         $query
