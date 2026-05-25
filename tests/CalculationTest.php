@@ -156,3 +156,65 @@ it('clamps end time to work end when leaving late', function () {
 
     expect($kpi->minutes)->toBe(120.0);
 });
+
+use Hasyirin\KPI\Models\RecurringHoliday;
+
+it('excludes a recurring holiday on the same month/day in each year of the range', function () {
+    // Labour Day May 1 — recurring annually
+    RecurringHoliday::create(['name' => 'Labour Day', 'month' => 5, 'day' => 1]);
+
+    // Two consecutive years, calc on May 1 in each
+    $kpi2025 = KPI::calculate(Carbon::parse('2025-04-30 08:00'), Carbon::parse('2025-05-02 17:00'));
+    $kpi2026 = KPI::calculate(Carbon::parse('2026-04-30 08:00'), Carbon::parse('2026-05-02 17:00'));
+
+    // 2025-05-01 is a Thursday, 2026-05-01 is a Friday — both scheduled days
+    expect($kpi2025->metadata->excluded)->toBe(1)
+        ->and($kpi2026->metadata->excluded)->toBe(1);
+});
+
+it('skips a recurring Feb 29 in non-leap years and applies it in leap years', function () {
+    RecurringHoliday::create(['name' => 'Leap Day', 'month' => 2, 'day' => 29]);
+
+    // 2024 is leap (Feb 29 = Thursday, scheduled). 2025 is not.
+    $kpi2024 = KPI::calculate(Carbon::parse('2024-02-28 08:00'), Carbon::parse('2024-03-01 17:00'));
+    $kpi2025 = KPI::calculate(Carbon::parse('2025-02-27 08:00'), Carbon::parse('2025-02-28 17:00'));
+
+    expect($kpi2024->metadata->excluded)->toBe(1)   // Feb 29 2024 excluded
+        ->and($kpi2025->metadata->excluded)->toBe(0); // no Feb 29 in 2025
+});
+
+it('ignores a recurring holiday whose effective_until is before the range', function () {
+    RecurringHoliday::create([
+        'name' => 'Retired',
+        'month' => 5,
+        'day' => 1,
+        'effective_until' => '2024-12-31',
+    ]);
+
+    $kpi = KPI::calculate(Carbon::parse('2025-04-30 08:00'), Carbon::parse('2025-05-02 17:00'));
+
+    expect($kpi->metadata->excluded)->toBe(0);
+});
+
+it('ignores a recurring holiday whose effective_from is after the range', function () {
+    RecurringHoliday::create([
+        'name' => 'Future',
+        'month' => 5,
+        'day' => 1,
+        'effective_from' => '2030-01-01',
+    ]);
+
+    $kpi = KPI::calculate(Carbon::parse('2025-04-30 08:00'), Carbon::parse('2025-05-02 17:00'));
+
+    expect($kpi->metadata->excluded)->toBe(0);
+});
+
+it('combines one-off and recurring holidays', function () {
+    Holiday::create(['name' => 'One-off', 'date' => '2025-05-01']);
+    RecurringHoliday::create(['name' => 'Recurring', 'month' => 5, 'day' => 2]);
+
+    $kpi = KPI::calculate(Carbon::parse('2025-04-30 08:00'), Carbon::parse('2025-05-05 17:00'));
+
+    // May 1 (Thu, one-off) + May 2 (Fri, recurring) excluded; May 3-4 unscheduled weekend
+    expect($kpi->metadata->excluded)->toBe(2);
+});

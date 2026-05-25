@@ -26,17 +26,40 @@ class KPI
 
         $total = ['period' => 0, 'minutes' => 0, 'scheduled' => 0, 'unscheduled' => 0, 'excluded' => 0];
 
+        $start = CarbonImmutable::parse($start);
+        $end = CarbonImmutable::parse($end ?? now());
+
+        // Widen the holiday query window by 7 days to capture late-December substitutes
+        // whose observed date may roll into the start of the calc range.
+        $queryStart = $start->subDays(7);
+
+        $holiday = config('kpi.models.holiday');
+        $recurring = config('kpi.models.recurring_holiday');
+
+        $oneOffOccurrences = $holiday::query()
+            ->range($queryStart, $end)
+            ->get(['date', 'observes_substitute'])
+            ->map(fn ($h) => [
+                'date' => $h->date->toImmutable(),
+                'observes_substitute' => (bool) $h->observes_substitute,
+            ]);
+
+        $recurringOccurrences = $recurring::query()
+            ->effectiveIn($queryStart, $end)
+            ->get()
+            ->flatMap(fn ($r) => $r->occurrencesIn($queryStart, $end)->map(fn ($d) => [
+                'date' => $d->toImmutable(),
+                'observes_substitute' => (bool) $r->observes_substitute,
+            ]));
+
+        $observedDates = $oneOffOccurrences->concat($recurringOccurrences)->pluck('date');
+
         $excludeDates = collect([
             ...collect($excludeDates)->map(fn (Carbon|string $date) => Carbon::parse($date)),
-            ...config('kpi.models.holiday')::query()->range($start, $end)->pluck('date'),
+            ...$observedDates,
         ]);
 
         $minutes = 0;
-
-        $start = CarbonImmutable::parse($start);
-
-        $end = CarbonImmutable::parse($end ?? now());
-
         $step = $start;
 
         while ($step < $end) {
@@ -47,7 +70,7 @@ class KPI
                 continue;
             }
 
-            if ($excludeDates->contains(fn (Carbon $date) => $date->isSameDay($step))) {
+            if ($excludeDates->contains(fn (Carbon|CarbonImmutable $date) => $date->isSameDay($step))) {
                 $step = $step->addDay()->startOfDay();
                 $total['excluded'] += 1;
 
