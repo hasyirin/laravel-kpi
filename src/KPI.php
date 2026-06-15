@@ -3,6 +3,7 @@
 namespace Hasyirin\KPI;
 
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Data\KPIMetadata;
 use Hasyirin\KPI\Data\WorkSchedule;
@@ -12,8 +13,8 @@ use Illuminate\Support\Carbon;
 class KPI
 {
     public function calculate(
-        Carbon|string $start,
-        Carbon|string|null $end = null,
+        CarbonInterface|string $start,
+        CarbonInterface|string|null $end = null,
         Arrayable|array $excludeDates = [],
         Arrayable|array $schedules = [],
     ): KPIData {
@@ -79,7 +80,7 @@ class KPI
             });
 
         $excludeDates = collect([
-            ...collect($excludeDates)->map(fn (Carbon|string $date) => Carbon::parse($date)),
+            ...collect($excludeDates)->map(fn (CarbonInterface|string $date) => Carbon::parse($date)),
             ...$observedDates,
         ]);
 
@@ -94,7 +95,7 @@ class KPI
                 continue;
             }
 
-            if ($excludeDates->contains(fn (Carbon|CarbonImmutable $date) => $date->isSameDay($step))) {
+            if ($excludeDates->contains(fn (CarbonInterface $date) => $date->isSameDay($step))) {
                 $step = $step->addDay()->startOfDay();
                 $total['excluded'] += 1;
 

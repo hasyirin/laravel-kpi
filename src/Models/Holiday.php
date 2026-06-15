@@ -2,6 +2,7 @@
 
 namespace Hasyirin\KPI\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -30,7 +31,7 @@ class Holiday extends Model
         return config('kpi.tables.holidays', parent::getTable());
     }
 
-    public function scopeRange(Builder $query, Carbon|string $start, Carbon|string|null $end = null): void
+    public function scopeRange(Builder $query, CarbonInterface|string $start, CarbonInterface|string|null $end = null): void
     {
         $query
             ->whereDate('date', '>=', Carbon::parse($start))

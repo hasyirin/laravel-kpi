@@ -3,13 +3,13 @@
 namespace Hasyirin\KPI\Concerns;
 
 use BackedEnum;
+use Carbon\CarbonInterface;
 use Hasyirin\KPI\Contracts\HasMovement;
 use Hasyirin\KPI\Events\Passed;
 use Hasyirin\KPI\Models\Movement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -34,7 +34,7 @@ trait InteractsWithMovement
         BackedEnum|string $status,
         ?Model $sender = null,
         ?Model $actor = null,
-        ?Carbon $receivedAt = null,
+        ?CarbonInterface $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
         ?bool $supersede = null,
@@ -91,7 +91,7 @@ trait InteractsWithMovement
         BackedEnum|string $status,
         ?Model $sender = null,
         ?Model $actor = null,
-        ?Carbon $receivedAt = null,
+        ?CarbonInterface $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
         ?bool $supersede = null,

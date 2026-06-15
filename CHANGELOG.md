@@ -2,6 +2,22 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## v3.1.1 — accept CarbonImmutable in date parameters - 2026-06-15
+
+Patch release fixing a `TypeError` for apps that configure Carbon to use immutable dates globally (`Date::use(CarbonImmutable::class)`). All public date parameters now type-hint `Carbon\CarbonInterface` instead of the concrete `Illuminate\Support\Carbon`, so both mutable and immutable instances are accepted. Backward-compatible for consumers using the `InteractsWithMovement` trait.
+
+### Fixed
+
+- `Movement::complete()`, `Movement::pass()`, `Movement::passIfNotCurrent()`, and the `InteractsWithMovement` trait equivalents now accept `?CarbonInterface` for their `$at` / `$receivedAt` parameters. Previously, passing a `CarbonImmutable` (e.g. from `now()` when the app sets `Date::use(CarbonImmutable::class)`) threw `Argument #1 ($at) must be of type ?Illuminate\Support\Carbon, Carbon\CarbonImmutable given`.
+- `KPI::calculate()`, `Holiday::scopeRange()`, `RecurringHoliday::scopeEffectiveIn()`, and `RecurringHoliday::occurrencesIn()` likewise accept `CarbonInterface|string` for their date-range parameters.
+- The `HasMovement` interface and the `@property` docblocks on `Movement` (`received_at`, `completed_at`) and `RecurringHoliday` (`effective_from`, `effective_until`) were updated to `CarbonInterface` to match.
+
+### Note for direct `HasMovement` implementers
+
+If you implement `HasMovement` manually (not via the `InteractsWithMovement` trait) with a concrete `?Carbon` parameter, widen it to `?Carbon\CarbonInterface` to satisfy the updated interface signature. Consumers using the trait need no changes.
+
+**Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v3.1.0...v3.1.1
+
 ## v3.1.0 — fixed/recurring public holidays + substitute-day support - 2026-05-26
 
 Minor release adding annually recurring public holidays and an opt-in next-working-day substitution mechanism. Fully additive — existing consumers see no behavior change until they populate new data or set the new config.

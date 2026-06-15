@@ -17,7 +17,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -36,8 +35,8 @@ use Illuminate\Support\Facades\DB;
  * @property ?float $hours
  * @property string $notes
  * @property bool $expects_children
- * @property Carbon $received_at
- * @property ?Carbon $completed_at
+ * @property CarbonInterface $received_at
+ * @property ?CarbonInterface $completed_at
  * @property float $interval
  */
 class Movement extends Model
@@ -128,7 +127,7 @@ class Movement extends Model
         return $this->hasMany(self::class, 'parent_id');
     }
 
-    public function complete(?Carbon $at = null): self
+    public function complete(?CarbonInterface $at = null): self
     {
         if (filled($this->completed_at)) {
             return $this;
@@ -156,7 +155,7 @@ class Movement extends Model
         BackedEnum|string $status,
         ?Model $sender = null,
         ?Model $actor = null,
-        ?Carbon $receivedAt = null,
+        ?CarbonInterface $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
         ?bool $supersede = null,
@@ -231,7 +230,7 @@ class Movement extends Model
         BackedEnum|string $status,
         ?Model $sender = null,
         ?Model $actor = null,
-        ?Carbon $receivedAt = null,
+        ?CarbonInterface $receivedAt = null,
         ?string $notes = null,
         Collection|array|null $properties = null,
         ?bool $supersede = null,
