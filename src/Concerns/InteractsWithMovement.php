@@ -19,15 +19,23 @@ use Illuminate\Support\Facades\DB;
  */
 trait InteractsWithMovement
 {
+    /** @return MorphOne<Movement, $this> */
     public function movement(): MorphOne
     {
-        return $this->morphOne(config('kpi.models.movement'), 'movable')
+        /** @var class-string<Movement> $model */
+        $model = config('kpi.models.movement');
+
+        return $this->morphOne($model, 'movable')
             ->ofMany(['received_at' => 'max'], fn ($query) => $query->whereNull('completed_at'));
     }
 
+    /** @return MorphMany<Movement, $this> */
     public function movements(): MorphMany
     {
-        return $this->morphMany(config('kpi.models.movement'), 'movable');
+        /** @var class-string<Movement> $model */
+        $model = config('kpi.models.movement');
+
+        return $this->morphMany($model, 'movable');
     }
 
     public function pass(
