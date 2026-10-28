@@ -1,2 +1,7 @@
 parameters:
-    ignoreErrors: []
+    ignoreErrors:
+        -
+            message: '#Trait Hasyirin\\KPI\\Concerns\\InteractsWithMovement is used zero times and is not analysed\.#'
+            identifier: trait.unused
+            path: src/Concerns/InteractsWithMovement.php
+            reportUnmatched: false
