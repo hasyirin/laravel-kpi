@@ -2,6 +2,22 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## v3.1.2 — typed movement relations - 2026-10-28
+
+Patch release improving the static-analysis types of the `InteractsWithMovement` trait. No runtime behavior changes; no action needed for consumers.
+
+### Fixed
+
+- `InteractsWithMovement::movement()` and `movements()` now declare `MorphOne<Movement, $this>` and `MorphMany<Movement, $this>` return types. Larastan/PHPStan in consuming apps now resolves the related model as `Movement` instead of `Model`, which removes false undefined-property and undefined-method errors on queries such as `$model->movements()->first()`.
+
+### Internal
+
+- Dev dependencies allow Pest 5 (`pestphp/pest`, `pest-plugin-arch`, `pest-plugin-laravel` are now `^3.0||^4.0||^5.0`). Laravel 13 CI runs resolve Pest 5; Laravel 12 runs stay on Pest 4.
+- CI uses `actions/checkout@v7`, and the PHPStan workflow also runs when `phpstan-baseline.neon` or `composer.json` changes.
+- PHPStan now analyses `InteractsWithMovement` through the test `Task` model, so the `trait.unused` baseline entry is gone.
+
+**Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v3.1.1...v3.1.2
+
 ## v3.1.1 — accept CarbonImmutable in date parameters - 2026-06-15
 
 Patch release fixing a `TypeError` for apps that configure Carbon to use immutable dates globally (`Date::use(CarbonImmutable::class)`). All public date parameters now type-hint `Carbon\CarbonInterface` instead of the concrete `Illuminate\Support\Carbon`, so both mutable and immutable instances are accepted. Backward-compatible for consumers using the `InteractsWithMovement` trait.
