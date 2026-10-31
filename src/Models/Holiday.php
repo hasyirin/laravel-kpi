@@ -34,7 +34,7 @@ class Holiday extends Model
     public function scopeRange(Builder $query, CarbonInterface|string $start, CarbonInterface|string|null $end = null): void
     {
         $query
-            ->whereDate('date', '>=', Carbon::parse($start))
-            ->whereDate('date', '<=', Carbon::parse($end ?? now()));
+            ->where('date', '>=', Carbon::parse($start)->toDateString())
+            ->where('date', '<', Carbon::parse($end ?? now())->addDay()->toDateString());
     }
 }

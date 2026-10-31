@@ -7,9 +7,8 @@ use Carbon\CarbonInterface;
 use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Data\KPIMetadata;
 use Hasyirin\KPI\Data\WorkSchedule;
-use Hasyirin\KPI\Models\RecurringHoliday;
+use Hasyirin\KPI\Support\HolidayCalendar;
 use Illuminate\Contracts\Support\Arrayable;
-use Illuminate\Support\Carbon;
 
 class KPI
 {
@@ -19,132 +18,79 @@ class KPI
         Arrayable|array $excludeDates = [],
         Arrayable|array $schedules = [],
     ): KPIData {
-
         $schedules = collect($schedules);
 
         if ($schedules->isEmpty()) {
-            $schedules = collect(config('kpi.schedule'))->map(fn (array $data) => WorkSchedule::parse($data));
+            $schedules = collect(config('kpi.schedule', []))->map(fn (array $data) => WorkSchedule::parse($data));
         }
 
-        $total = ['period' => 0, 'minutes' => 0, 'scheduled' => 0, 'unscheduled' => 0, 'excluded' => 0];
+        $timezone = config('kpi.timezone', null) ?? config('app.timezone');
 
-        $start = CarbonImmutable::parse($start);
-        $end = CarbonImmutable::parse($end ?? now());
+        $start = $this->toTimezone($start, $timezone);
+        $end = $this->toTimezone($end ?? now(), $timezone);
 
-        // Widen the holiday query window by 7 days to capture late-December substitutes
-        // whose observed date may roll into the start of the calc range.
-        $queryStart = $start->subDays(7);
+        if ($end->getTimestamp() <= $start->getTimestamp()) {
+            return KPIData::make();
+        }
 
-        $holiday = config('kpi.models.holiday');
-        $recurring = config('kpi.models.recurring_holiday', RecurringHoliday::class);
+        $excludedDays = app(HolidayCalendar::class)->excludedDays($start, $end, $schedules, $excludeDates);
 
-        $oneOffOccurrences = $holiday::query()
-            ->range($queryStart, $end)
-            ->get(['date', 'observes_substitute'])
-            ->map(fn ($h) => [
-                'date' => $h->date->toImmutable(),
-                'observes_substitute' => (bool) $h->observes_substitute,
-            ]);
+        $seconds = 0;
+        $periodSum = 0.0;
+        $scheduledSeconds = 0;
+        $scheduledDays = 0;
+        $unscheduledDays = 0;
+        $excludedCount = 0;
 
-        $recurringOccurrences = $recurring::query()
-            ->effectiveIn($queryStart, $end)
-            ->get()
-            ->flatMap(fn ($r) => $r->occurrencesIn($queryStart, $end)->map(fn ($d) => [
-                'date' => $d->toImmutable(),
-                'observes_substitute' => (bool) $r->observes_substitute,
-            ]));
+        for ($day = $start->startOfDay(); $day < $end; $day = $day->addDay()->startOfDay()) {
+            /** @var ?WorkSchedule $schedule */
+            $schedule = $schedules[$day->dayOfWeek] ?? null;
 
-        $substituteDays = collect(config('kpi.substitute', []))->flip();
-
-        $observedDates = $oneOffOccurrences
-            ->concat($recurringOccurrences)
-            ->map(function (array $occ) use ($schedules, $substituteDays) {
-                $date = $occ['date'];
-
-                if ($occ['observes_substitute']
-                    && $substituteDays->has($date->dayOfWeek)
-                    && empty($schedules[$date->dayOfWeek])
-                ) {
-                    $i = 0;
-                    for (; $i < 7; $i++) {
-                        $date = $date->addDay();
-                        if (! empty($schedules[$date->dayOfWeek])) {
-                            break;
-                        }
-                    }
-                    if ($i === 7) {
-                        $date = $occ['date'];   // safety fall-back: degenerate schedule
-                    }
-                }
-
-                return $date;
-            });
-
-        $excludeDates = collect([
-            ...collect($excludeDates)->map(fn (CarbonInterface|string $date) => Carbon::parse($date)),
-            ...$observedDates,
-        ]);
-
-        $minutes = 0;
-        $step = $start;
-
-        while ($step < $end) {
-            if (empty($schedules[$step->dayOfWeek])) {
-                $step = $step->addDay()->startOfDay();
-                $total['unscheduled'] += 1;
+            if (empty($schedule)) {
+                $unscheduledDays++;
 
                 continue;
             }
 
-            if ($excludeDates->contains(fn (CarbonInterface $date) => $date->isSameDay($step))) {
-                $step = $step->addDay()->startOfDay();
-                $total['excluded'] += 1;
+            if (isset($excludedDays[$day->format('Y-m-d')])) {
+                $excludedCount++;
 
                 continue;
             }
 
-            /** @var WorkSchedule $schedule */
-            $schedule = $schedules[$step->dayOfWeek];
+            $windowStart = $day->setTime($schedule->start->hour, $schedule->start->minute)->getTimestamp();
+            $windowEnd = $day->setTime($schedule->end->hour, $schedule->end->minute)->getTimestamp();
+            $length = $windowEnd - $windowStart;
 
-            $total['minutes'] += $schedule->minutes();
-            $total['scheduled'] += 1;
+            $scheduledDays++;
+            $scheduledSeconds += $length;
 
-            $step = $this->sanitizeStartDate($schedule, $step);
+            if ($length <= 0) {
+                continue;
+            }
 
-            $finish = min($end, $step->setTime($schedule->end->hour, $schedule->end->minute));
+            $overlap = max(0, min($end->getTimestamp(), $windowEnd) - max($start->getTimestamp(), $windowStart));
 
-            $diff = $finish > $step ? $step->diffInMinutes($finish) : 0.0;
-
-            $minutes += $diff;
-
-            $period = bcdiv((string) max($diff, 0.0001), (string) $schedule->minutes(), 4);
-
-            $total['period'] = bcadd($total['period'], $period, 4);
-
-            $step = $finish->addDay()->startOfDay();
+            $seconds += $overlap;
+            $periodSum += $overlap / $length;
         }
 
         return KPIData::make(
-            minutes: $minutes,
-            hours: (float) bcdiv((string) max($minutes, 0.0001), '60', 4),
-            period: $total['period'],
+            seconds: $seconds,
+            period: round($periodSum, 4),
             metadata: KPIMetadata::make(
-                minutes: $total['minutes'],
-                unscheduled: $total['unscheduled'],
-                scheduled: $total['scheduled'],
-                excluded: $total['excluded'],
-            )
+                scheduledSeconds: $scheduledSeconds,
+                scheduledDays: $scheduledDays,
+                unscheduledDays: $unscheduledDays,
+                excludedDays: $excludedCount,
+            ),
         );
     }
 
-    private function sanitizeStartDate(WorkSchedule $schedule, CarbonImmutable $date): CarbonImmutable
+    private function toTimezone(CarbonInterface|string $moment, string $timezone): CarbonImmutable
     {
-        if ($date->hour == $schedule->start->hour && $date->minute <= $schedule->start->minute) {
-            $date = $date->setMinute($schedule->start->minute)->startOfMinute();
-        } elseif ($date->hour < $schedule->start->hour) {
-            $date = $date->setHour($schedule->start->hour)->setMinute($schedule->start->minute)->startOfMinute();
-        }
-
-        return $date;
+        return $moment instanceof CarbonInterface
+            ? CarbonImmutable::instance($moment)->setTimezone($timezone)
+            : CarbonImmutable::parse($moment, $timezone);
     }
 }

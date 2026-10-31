@@ -86,33 +86,33 @@ it('rejects a work schedule that does not end after it starts', function () {
 it('creates metadata with defaults', function () {
     $meta = KPIMetadata::make();
 
-    expect($meta->minutes)->toBe(0)
-        ->and($meta->unscheduled)->toBe(0)
-        ->and($meta->scheduled)->toBe(0)
-        ->and($meta->excluded)->toBe(0);
+    expect($meta->scheduledSeconds)->toBe(0)
+        ->and($meta->scheduledDays)->toBe(0)
+        ->and($meta->unscheduledDays)->toBe(0)
+        ->and($meta->excludedDays)->toBe(0);
 });
 
 it('converts metadata to array', function () {
-    $meta = KPIMetadata::make(minutes: 540, scheduled: 1, unscheduled: 2, excluded: 3);
+    $meta = KPIMetadata::make(scheduledSeconds: 32400, scheduledDays: 1, unscheduledDays: 2, excludedDays: 3);
 
     expect($meta->toArray())->toBe([
-        'minutes' => 540,
-        'unscheduled' => 2,
-        'scheduled' => 1,
-        'excluded' => 3,
+        'scheduledSeconds' => 32400,
+        'scheduledDays' => 1,
+        'unscheduledDays' => 2,
+        'excludedDays' => 3,
     ]);
 });
 
 it('serializes metadata to json', function () {
-    $meta = KPIMetadata::make(minutes: 100);
+    $meta = KPIMetadata::make(scheduledSeconds: 6000);
 
-    expect(json_encode($meta))->toBe('{"minutes":100,"unscheduled":0,"scheduled":0,"excluded":0}');
+    expect(json_encode($meta))->toBe('{"scheduledSeconds":6000,"scheduledDays":0,"unscheduledDays":0,"excludedDays":0}');
 });
 
 it('compares metadata equality', function () {
-    $a = KPIMetadata::make(minutes: 540, scheduled: 1);
-    $b = KPIMetadata::make(minutes: 540, scheduled: 1);
-    $c = KPIMetadata::make(minutes: 540, scheduled: 2);
+    $a = KPIMetadata::make(scheduledSeconds: 32400, scheduledDays: 1);
+    $b = KPIMetadata::make(scheduledSeconds: 32400, scheduledDays: 1);
+    $c = KPIMetadata::make(scheduledSeconds: 32400, scheduledDays: 2);
 
     expect($a->equals($b))->toBeTrue()
         ->and($a->equals($c))->toBeFalse();
@@ -123,49 +123,62 @@ it('compares metadata equality', function () {
 it('creates KPIData with defaults', function () {
     $data = KPIData::make();
 
-    expect($data->minutes)->toBe(0.0)
-        ->and($data->hours)->toBe(0.0)
+    expect($data->seconds)->toBe(0)
         ->and($data->period)->toBe(0.0)
         ->and($data->metadata)->toBeInstanceOf(KPIMetadata::class);
 });
 
 it('converts KPIData to array', function () {
-    $data = KPIData::make(minutes: 60, hours: 1, period: 0.1111);
+    $data = KPIData::make(seconds: 3600, period: 0.1111);
 
     expect($data->toArray())->toBe([
-        'minutes' => 60.0,
-        'hours' => 1.0,
+        'seconds' => 3600,
         'period' => 0.1111,
         'metadata' => [
-            'minutes' => 0,
-            'unscheduled' => 0,
-            'scheduled' => 0,
-            'excluded' => 0,
+            'scheduledSeconds' => 0,
+            'scheduledDays' => 0,
+            'unscheduledDays' => 0,
+            'excludedDays' => 0,
         ],
     ]);
 });
 
 it('serializes KPIData to json', function () {
-    $data = KPIData::make(minutes: 60, hours: 1, period: 0.5);
+    $data = KPIData::make(seconds: 3600, period: 0.5);
     $decoded = json_decode(json_encode($data), true);
 
-    expect($decoded['minutes'])->toEqual(60)
-        ->and($decoded['hours'])->toEqual(1)
+    expect($decoded['seconds'])->toBe(3600)
         ->and($decoded['period'])->toEqual(0.5);
 });
 
 it('compares KPIData equality', function () {
-    $a = KPIData::make(minutes: 60, hours: 1, period: 0.1111);
-    $b = KPIData::make(minutes: 60, hours: 1, period: 0.1111);
-    $c = KPIData::make(minutes: 120, hours: 2, period: 0.2222);
+    $a = KPIData::make(seconds: 3600, period: 0.1111);
+    $b = KPIData::make(seconds: 3600, period: 0.1111);
+    $c = KPIData::make(seconds: 7200, period: 0.2222);
 
     expect($a->equals($b))->toBeTrue()
         ->and($a->equals($c))->toBeFalse();
 });
 
+it('compares seconds exactly', function () {
+    expect(KPIData::make(seconds: 3600)->equals(KPIData::make(seconds: 3601)))->toBeFalse();
+});
+
+it('tolerates float noise in period when comparing', function () {
+    expect(KPIData::make(period: 0.1111)->equals(KPIData::make(period: 0.11110001)))->toBeTrue();
+});
+
 it('KPIData equality checks metadata too', function () {
-    $a = KPIData::make(minutes: 60, hours: 1, period: 0.5, metadata: KPIMetadata::make(minutes: 540));
-    $b = KPIData::make(minutes: 60, hours: 1, period: 0.5, metadata: KPIMetadata::make(minutes: 450));
+    $a = KPIData::make(seconds: 3600, period: 0.5, metadata: KPIMetadata::make(scheduledSeconds: 32400));
+    $b = KPIData::make(seconds: 3600, period: 0.5, metadata: KPIMetadata::make(scheduledSeconds: 27000));
 
     expect($a->equals($b))->toBeFalse();
+});
+
+it('reports minutes and hours as floats and interval cascaded', function () {
+    $kpi = KPIData::make(seconds: 5400);
+
+    expect($kpi->minutes())->toBe(90.0)
+        ->and($kpi->hours())->toBe(1.5)
+        ->and($kpi->interval()->forHumans(['parts' => 2]))->toBe('1 hour 30 minutes');
 });

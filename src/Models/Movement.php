@@ -108,7 +108,7 @@ class Movement extends Model
         $kpi = filled($this->completed_at) ? $this->calculate() : null;
 
         $this->period = $kpi?->period;
-        $this->hours = $kpi?->hours;
+        $this->hours = $kpi?->hours();
     }
 
     protected function calculate(): KPIData
@@ -316,7 +316,7 @@ class Movement extends Model
     public function interval(): Attribute
     {
         return Attribute::make(get: fn () => ($this->period > 0 || $this->period === null)
-            ? ($this->hours ?? $this->calculate()->hours) * 60 * 60
+            ? ($this->hours ?? $this->calculate()->hours()) * 60 * 60
             : 0
         )->withoutObjectCaching();
     }

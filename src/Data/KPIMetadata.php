@@ -8,32 +8,32 @@ use JsonSerializable;
 final class KPIMetadata implements Arrayable, JsonSerializable
 {
     public function __construct(
-        public int $minutes,
-        public int $unscheduled = 0,
-        public int $scheduled = 0,
-        public int $excluded = 0,
+        public int $scheduledSeconds = 0,
+        public int $scheduledDays = 0,
+        public int $unscheduledDays = 0,
+        public int $excludedDays = 0,
     ) {}
 
-    public static function make(int $minutes = 0, int $unscheduled = 0, int $scheduled = 0, int $excluded = 0): self
+    public static function make(int $scheduledSeconds = 0, int $scheduledDays = 0, int $unscheduledDays = 0, int $excludedDays = 0): self
     {
-        return new self($minutes, $unscheduled, $scheduled, $excluded);
+        return new self($scheduledSeconds, $scheduledDays, $unscheduledDays, $excludedDays);
     }
 
     public function equals(KPIMetadata $other): bool
     {
-        return $this->minutes === $other->minutes
-            && $this->unscheduled === $other->unscheduled
-            && $this->scheduled === $other->scheduled
-            && $this->excluded === $other->excluded;
+        return $this->scheduledSeconds === $other->scheduledSeconds
+            && $this->scheduledDays === $other->scheduledDays
+            && $this->unscheduledDays === $other->unscheduledDays
+            && $this->excludedDays === $other->excludedDays;
     }
 
     public function toArray(): array
     {
         return [
-            'minutes' => $this->minutes,
-            'unscheduled' => $this->unscheduled,
-            'scheduled' => $this->scheduled,
-            'excluded' => $this->excluded,
+            'scheduledSeconds' => $this->scheduledSeconds,
+            'scheduledDays' => $this->scheduledDays,
+            'unscheduledDays' => $this->unscheduledDays,
+            'excludedDays' => $this->excludedDays,
         ];
     }
 

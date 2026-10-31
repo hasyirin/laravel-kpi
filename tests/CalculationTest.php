@@ -19,10 +19,9 @@ it('excludes a holiday from calculation', function () {
     $kpi = KPI::calculate(Carbon::parse('2025-01-01 08:00'), Carbon::parse('2025-01-03 15:30'));
 
     expect($kpi)->toMatchArray(KPIData::make(
-        minutes: 990,
-        hours: 16.5,
+        seconds: 59400,
         period: 2,
-        metadata: KPIMetadata::make(minutes: 990, scheduled: 2, excluded: 1),
+        metadata: KPIMetadata::make(scheduledSeconds: 59400, scheduledDays: 2, excludedDays: 1),
     )->toArray());
 });
 
@@ -34,10 +33,9 @@ it('excludes multiple holidays from calculation', function () {
     $kpi = KPI::calculate(Carbon::parse('2025-01-01 08:00'), Carbon::parse('2025-01-03 15:30'));
 
     expect($kpi)->toMatchArray(KPIData::make(
-        minutes: 450,
-        hours: 7.5,
+        seconds: 27000,
         period: 1,
-        metadata: KPIMetadata::make(minutes: 450, scheduled: 1, excluded: 2),
+        metadata: KPIMetadata::make(scheduledSeconds: 27000, scheduledDays: 1, excludedDays: 2),
     )->toArray());
 });
 
@@ -49,9 +47,9 @@ it('does not double-count a holiday that falls on a weekend', function () {
     $kpi = KPI::calculate(Carbon::parse('2025-01-03 08:00'), Carbon::parse('2025-01-06 17:00'));
 
     // Sat is unscheduled (skipped before holiday check), Sun is unscheduled, holiday doesn't apply
-    expect($kpi->metadata->unscheduled)->toBe(2)
-        ->and($kpi->metadata->excluded)->toBe(0)
-        ->and($kpi->metadata->scheduled)->toBe(2);
+    expect($kpi->metadata->unscheduledDays)->toBe(2)
+        ->and($kpi->metadata->excludedDays)->toBe(0)
+        ->and($kpi->metadata->scheduledDays)->toBe(2);
 });
 
 // --- Custom exclude dates ---
@@ -63,9 +61,9 @@ it('excludes custom dates from calculation', function () {
         excludeDates: [Carbon::parse('2025-01-02')],
     );
 
-    expect($kpi->metadata->excluded)->toBe(1)
-        ->and($kpi->metadata->scheduled)->toBe(2)
-        ->and($kpi->minutes)->toBe(990.0);
+    expect($kpi->metadata->excludedDays)->toBe(1)
+        ->and($kpi->metadata->scheduledDays)->toBe(2)
+        ->and($kpi->seconds)->toBe(59400);
 });
 
 it('combines custom exclude dates with holidays', function () {
@@ -78,9 +76,9 @@ it('combines custom exclude dates with holidays', function () {
     );
 
     // Both Jan 1 (holiday) and Jan 2 (custom) excluded, only Fri Jan 3 remains
-    expect($kpi->metadata->excluded)->toBe(2)
-        ->and($kpi->metadata->scheduled)->toBe(1)
-        ->and($kpi->minutes)->toBe(450.0);
+    expect($kpi->metadata->excludedDays)->toBe(2)
+        ->and($kpi->metadata->scheduledDays)->toBe(1)
+        ->and($kpi->seconds)->toBe(27000);
 });
 
 // --- Custom work schedules ---
@@ -97,7 +95,7 @@ it('uses custom work schedule', function () {
         schedules: $schedules,
     );
 
-    expect($kpi->minutes)->toBe(360.0)
+    expect($kpi->seconds)->toBe(21600)
         ->and($kpi->period)->toBe(1.0);
 });
 
@@ -114,9 +112,9 @@ it('custom schedule with no entry for a day treats it as unscheduled', function 
         schedules: $schedules,
     );
 
-    expect($kpi->minutes)->toBe(540.0)
-        ->and($kpi->metadata->scheduled)->toBe(1)
-        ->and($kpi->metadata->unscheduled)->toBe(1);
+    expect($kpi->seconds)->toBe(32400)
+        ->and($kpi->metadata->scheduledDays)->toBe(1)
+        ->and($kpi->metadata->unscheduledDays)->toBe(1);
 });
 
 // --- Edge cases ---
@@ -124,7 +122,7 @@ it('custom schedule with no entry for a day treats it as unscheduled', function 
 it('returns zero when start equals end', function () {
     $kpi = KPI::calculate(Carbon::parse('2025-01-01 10:00'), Carbon::parse('2025-01-01 10:00'));
 
-    expect($kpi->minutes)->toBe(0.0)
+    expect($kpi->seconds)->toBe(0)
         ->and($kpi->period)->toBe(0.0);
 });
 
@@ -132,31 +130,31 @@ it('returns zero when entire range falls outside work hours', function () {
     // 5:00 AM to 7:00 AM, before work starts at 8:00
     $kpi = KPI::calculate(Carbon::parse('2025-01-01 05:00'), Carbon::parse('2025-01-01 07:00'));
 
-    expect($kpi->minutes)->toBe(0.0)
-        ->and($kpi->metadata->scheduled)->toBe(1);
+    expect($kpi->seconds)->toBe(0)
+        ->and($kpi->metadata->scheduledDays)->toBe(1);
 });
 
 it('handles range spanning only weekends', function () {
     // Sat Jan 4 to Sun Jan 5
     $kpi = KPI::calculate(Carbon::parse('2025-01-04 08:00'), Carbon::parse('2025-01-05 17:00'));
 
-    expect($kpi->minutes)->toBe(0.0)
-        ->and($kpi->metadata->unscheduled)->toBe(2)
-        ->and($kpi->metadata->scheduled)->toBe(0);
+    expect($kpi->seconds)->toBe(0)
+        ->and($kpi->metadata->unscheduledDays)->toBe(2)
+        ->and($kpi->metadata->scheduledDays)->toBe(0);
 });
 
 it('clamps start time to work start when arriving early', function () {
     // Arrive at 6:00, work starts at 8:00, leave at 10:00 → 2 hours of work
     $kpi = KPI::calculate(Carbon::parse('2025-01-01 06:00'), Carbon::parse('2025-01-01 10:00'));
 
-    expect($kpi->minutes)->toBe(120.0);
+    expect($kpi->seconds)->toBe(7200);
 });
 
 it('clamps end time to work end when leaving late', function () {
     // Arrive at 15:00, work ends at 17:00 on wednesday, leave at 19:00 → 2 hours
     $kpi = KPI::calculate(Carbon::parse('2025-01-01 15:00'), Carbon::parse('2025-01-01 19:00'));
 
-    expect($kpi->minutes)->toBe(120.0);
+    expect($kpi->seconds)->toBe(7200);
 });
 
 it('excludes a recurring holiday on the same month/day in each year of the range', function () {
@@ -168,8 +166,8 @@ it('excludes a recurring holiday on the same month/day in each year of the range
     $kpi2026 = KPI::calculate(Carbon::parse('2026-04-30 08:00'), Carbon::parse('2026-05-02 17:00'));
 
     // 2025-05-01 is a Thursday, 2026-05-01 is a Friday — both scheduled days
-    expect($kpi2025->metadata->excluded)->toBe(1)
-        ->and($kpi2026->metadata->excluded)->toBe(1);
+    expect($kpi2025->metadata->excludedDays)->toBe(1)
+        ->and($kpi2026->metadata->excludedDays)->toBe(1);
 });
 
 it('skips a recurring Feb 29 in non-leap years and applies it in leap years', function () {
@@ -179,8 +177,8 @@ it('skips a recurring Feb 29 in non-leap years and applies it in leap years', fu
     $kpi2024 = KPI::calculate(Carbon::parse('2024-02-28 08:00'), Carbon::parse('2024-03-01 17:00'));
     $kpi2025 = KPI::calculate(Carbon::parse('2025-02-27 08:00'), Carbon::parse('2025-02-28 17:00'));
 
-    expect($kpi2024->metadata->excluded)->toBe(1)   // Feb 29 2024 excluded
-        ->and($kpi2025->metadata->excluded)->toBe(0); // no Feb 29 in 2025
+    expect($kpi2024->metadata->excludedDays)->toBe(1)   // Feb 29 2024 excluded
+        ->and($kpi2025->metadata->excludedDays)->toBe(0); // no Feb 29 in 2025
 });
 
 it('ignores a recurring holiday whose effective_until is before the range', function () {
@@ -193,7 +191,7 @@ it('ignores a recurring holiday whose effective_until is before the range', func
 
     $kpi = KPI::calculate(Carbon::parse('2025-04-30 08:00'), Carbon::parse('2025-05-02 17:00'));
 
-    expect($kpi->metadata->excluded)->toBe(0);
+    expect($kpi->metadata->excludedDays)->toBe(0);
 });
 
 it('ignores a recurring holiday whose effective_from is after the range', function () {
@@ -206,7 +204,7 @@ it('ignores a recurring holiday whose effective_from is after the range', functi
 
     $kpi = KPI::calculate(Carbon::parse('2025-04-30 08:00'), Carbon::parse('2025-05-02 17:00'));
 
-    expect($kpi->metadata->excluded)->toBe(0);
+    expect($kpi->metadata->excludedDays)->toBe(0);
 });
 
 it('combines one-off and recurring holidays', function () {
@@ -216,7 +214,7 @@ it('combines one-off and recurring holidays', function () {
     $kpi = KPI::calculate(Carbon::parse('2025-04-30 08:00'), Carbon::parse('2025-05-05 17:00'));
 
     // May 1 (Thu, one-off) + May 2 (Fri, recurring) excluded; May 3-4 unscheduled weekend
-    expect($kpi->metadata->excluded)->toBe(2);
+    expect($kpi->metadata->excludedDays)->toBe(2);
 });
 
 // --- Substitute day resolution ---
@@ -230,7 +228,7 @@ it('does not substitute when observes_substitute is false by default', function 
     $kpi = KPI::calculate(Carbon::parse('2025-05-02 08:00'), Carbon::parse('2025-05-06 17:00'));
 
     // No substitute → Monday May 5 stays scheduled (not excluded)
-    expect($kpi->metadata->excluded)->toBe(0);
+    expect($kpi->metadata->excludedDays)->toBe(0);
 });
 
 it('does not substitute when the day-of-week is not in kpi.substitute', function () {
@@ -241,7 +239,7 @@ it('does not substitute when the day-of-week is not in kpi.substitute', function
     $kpi = KPI::calculate(Carbon::parse('2025-05-02 08:00'), Carbon::parse('2025-05-06 17:00'));
 
     // observes_substitute=true but Sunday not eligible → no substitute
-    expect($kpi->metadata->excluded)->toBe(0);
+    expect($kpi->metadata->excludedDays)->toBe(0);
 });
 
 it('substitutes Sunday holiday to Monday under Sat-Sun config', function () {
@@ -253,7 +251,7 @@ it('substitutes Sunday holiday to Monday under Sat-Sun config', function () {
     $kpi = KPI::calculate(Carbon::parse('2025-05-02 08:00'), Carbon::parse('2025-05-06 17:00'));
 
     // Sun substituted to Mon May 5 → Mon excluded
-    expect($kpi->metadata->excluded)->toBe(1);
+    expect($kpi->metadata->excludedDays)->toBe(1);
 });
 
 it('substitutes Saturday holiday to Sunday under Kelantan/Terengganu config', function () {
@@ -278,7 +276,7 @@ it('substitutes Saturday holiday to Sunday under Kelantan/Terengganu config', fu
     );
 
     // Sat substituted to Sun May 4 → Sun excluded
-    expect($kpi->metadata->excluded)->toBe(1);
+    expect($kpi->metadata->excludedDays)->toBe(1);
 });
 
 it('substitutes Friday holiday past Saturday to Sunday under Kedah config', function () {
@@ -302,7 +300,7 @@ it('substitutes Friday holiday past Saturday to Sunday under Kedah config', func
     );
 
     // Fri → skip Sat (off) → Sun May 4 (working in Kedah schedule) → Sun excluded
-    expect($kpi->metadata->excluded)->toBe(1);
+    expect($kpi->metadata->excludedDays)->toBe(1);
 });
 
 it('collapses collision when Sat substitutes onto Sunday holiday in Terengganu', function () {
@@ -326,7 +324,7 @@ it('collapses collision when Sat substitutes onto Sunday holiday in Terengganu',
     );
 
     // Sat sub → Sun. Sun raw also there. Collision → Sun excluded ONCE. Mon stays scheduled.
-    expect($kpi->metadata->excluded)->toBe(1);
+    expect($kpi->metadata->excludedDays)->toBe(1);
 });
 
 it('does not substitute when the raw day is a working day, even if in kpi.substitute', function () {
@@ -338,7 +336,7 @@ it('does not substitute when the raw day is a working day, even if in kpi.substi
     $kpi = KPI::calculate(Carbon::parse('2025-04-29 08:00'), Carbon::parse('2025-05-02 17:00'));
 
     // Wed is working → guard blocks substitute → Wed itself excluded (1), not Thu
-    expect($kpi->metadata->excluded)->toBe(1);
+    expect($kpi->metadata->excludedDays)->toBe(1);
 });
 
 it('substitutes a recurring holiday occurrence per year independently', function () {
@@ -359,8 +357,8 @@ it('substitutes a recurring holiday occurrence per year independently', function
 
     // 2025: Aug 31 (Sun, unscheduled) + Sep 1 (Mon, excluded via substitute) → excluded = 1
     // 2026: Aug 31 (Mon, excluded directly) → excluded = 1
-    expect($kpi2025->metadata->excluded)->toBe(1)
-        ->and($kpi2026->metadata->excluded)->toBe(1);
+    expect($kpi2025->metadata->excludedDays)->toBe(1)
+        ->and($kpi2026->metadata->excludedDays)->toBe(1);
 });
 
 // --- Config published by older versions ---
@@ -371,7 +369,7 @@ it('calculates with a config published before recurring holidays existed', funct
     // Mon 8:00 → 17:00 = 9 working hours
     $kpi = KPI::calculate(Carbon::parse('2024-01-01 08:00'), Carbon::parse('2024-01-01 17:00'));
 
-    expect($kpi->hours)->toBe(9.0);
+    expect($kpi->seconds)->toBe(32400);
 });
 
 // --- Schedule input and boundaries ---
@@ -379,12 +377,94 @@ it('calculates with a config published before recurring holidays existed', funct
 it('falls back to the configured schedule when given an empty collection of schedules', function () {
     $kpi = KPI::calculate(Carbon::parse('2024-01-01 08:00'), Carbon::parse('2024-01-01 17:00'), schedules: collect());
 
-    expect($kpi->hours)->toBe(9.0);
+    expect($kpi->seconds)->toBe(32400);
 });
 
 it('does not count the seconds of a mid-day start past the end of the work day', function () {
     // Mon 09:15:30 → 17:00:00 = 464.5 minutes; Tue ends at 08:00 before work starts
     $kpi = KPI::calculate(Carbon::parse('2024-01-01 09:15:30'), Carbon::parse('2024-01-02 08:00'));
 
-    expect($kpi->minutes)->toBe(464.5);
+    expect($kpi->seconds)->toBe(27870);
+});
+
+// --- Time zone and exact seconds ---
+
+it('applies the schedule in kpi.timezone', function () {
+    config()->set('kpi.timezone', 'Asia/Kuala_Lumpur');
+
+    expect(KPI::calculate(Carbon::parse('2025-01-01 00:00', 'UTC'), Carbon::parse('2025-01-01 09:00', 'UTC'))->seconds)
+        ->toBe(32400);
+});
+
+it('does not zone-convert excluded dates', function () {
+    config()->set('kpi.timezone', 'Asia/Kuala_Lumpur');
+
+    $kpi = KPI::calculate('2025-01-02 00:00', '2025-01-02 09:00', excludeDates: [Carbon::parse('2025-01-02 20:00', 'UTC')]);
+
+    expect($kpi->metadata->excludedDays)->toBe(1);
+});
+
+it('uses the real window length on a DST day', function () {
+    config()->set('kpi.timezone', 'Europe/London');
+    $schedule = [0 => WorkSchedule::parse(['00:30', '03:30'])];
+
+    $kpi = KPI::calculate('2026-03-29 00:00', '2026-03-29 12:00', schedules: $schedule);
+
+    expect($kpi->seconds)->toBe(7200)
+        ->and($kpi->metadata->scheduledSeconds)->toBe(7200)
+        ->and($kpi->period)->toBe(1.0);
+});
+
+it('survives a zero-length window on a DST day', function () {
+    config()->set('kpi.timezone', 'Europe/London');
+    $schedule = [0 => WorkSchedule::parse(['01:00', '02:00'])];
+
+    $kpi = KPI::calculate('2026-03-29 00:00', '2026-03-29 12:00', schedules: $schedule);
+
+    expect($kpi->seconds)->toBe(0)->and($kpi->period)->toBe(0.0);
+});
+
+it('counts exact seconds over more than two years', function () {
+    $schedule = collect(range(0, 6))->mapWithKeys(fn ($d) => [$d => WorkSchedule::parse(['8:00', '9:00'])])->all();
+
+    $kpi = KPI::calculate('2025-01-01 00:00', '2027-01-01 00:00', schedules: $schedule);
+
+    expect($kpi->seconds)->toBe(730 * 3600)->and($kpi->period)->toBe(730.0);
+});
+
+it('counts 10 minutes as exactly 600 seconds', function () {
+    expect(KPI::calculate('2025-01-01 08:00', '2025-01-01 08:10')->seconds)->toBe(600);
+});
+
+it('finds a holiday on the first day of the range when the bound has a time', function () {
+    Holiday::create(['name' => 'H', 'date' => '2025-01-01']);
+
+    expect(KPI::calculate('2025-01-01 13:00', '2025-01-01 15:00')->metadata->excludedDays)->toBe(1);
+});
+
+it('finds a holiday on the last day of the range when the bound has a time', function () {
+    Holiday::create(['name' => 'H', 'date' => '2025-01-02']);
+
+    expect(KPI::calculate('2025-01-02 08:00', '2025-01-02 15:00')->metadata->excludedDays)->toBe(1);
+});
+
+it('finds a recurring holiday on the first and last day of the range when the bounds have a time', function () {
+    RecurringHoliday::create(['name' => 'Labour Day', 'month' => 5, 'day' => 1]);
+
+    expect(KPI::calculate('2025-05-01 13:00', '2025-05-01 15:00')->metadata->excludedDays)->toBe(1)
+        ->and(KPI::calculate('2025-04-30 13:00', '2025-05-01 15:00')->metadata->excludedDays)->toBe(1);
+});
+
+it('finds a recurring holiday on the last day when kpi.timezone is ahead of the PHP default time zone', function () {
+    config()->set('kpi.timezone', 'Asia/Kuala_Lumpur');
+    RecurringHoliday::create(['name' => 'New Year', 'month' => 1, 'day' => 1]);
+
+    expect(KPI::calculate('2025-01-01 02:00', '2025-01-01 03:00')->metadata->excludedDays)->toBe(1);
+});
+
+it('looks back 7 days when the range starts with a time', function () {
+    config()->set('kpi.substitute', [Day::SUNDAY->value]);
+    Holiday::create(['name' => 'Sun', 'date' => '2025-05-04', 'observes_substitute' => true]);
+
+    expect(KPI::calculate('2025-05-05 08:00', '2025-05-05 17:00')->metadata->excludedDays)->toBe(1);
 });

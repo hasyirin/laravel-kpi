@@ -2,27 +2,41 @@
 
 namespace Hasyirin\KPI\Data;
 
+use Carbon\CarbonInterval;
 use Illuminate\Contracts\Support\Arrayable;
 use JsonSerializable;
 
 final class KPIData implements Arrayable, JsonSerializable
 {
     public function __construct(
-        public float $minutes,
-        public float $hours,
+        public int $seconds,
         public float $period,
         public KPIMetadata $metadata,
     ) {}
 
-    public static function make(float $minutes = 0, float $hours = 0, float $period = 0, ?KPIMetadata $metadata = null): self
+    public static function make(int $seconds = 0, float $period = 0, ?KPIMetadata $metadata = null): self
     {
-        return new self($minutes, $hours, $period, $metadata ?? KPIMetadata::make());
+        return new self($seconds, $period, $metadata ?? KPIMetadata::make());
+    }
+
+    public function minutes(): float
+    {
+        return $this->seconds / 60;
+    }
+
+    public function hours(): float
+    {
+        return $this->seconds / 3600;
+    }
+
+    public function interval(): CarbonInterval
+    {
+        return CarbonInterval::seconds($this->seconds)->cascade();
     }
 
     public function equals(KPIData $other): bool
     {
-        return self::floatEquals($this->minutes, $other->minutes)
-            && self::floatEquals($this->hours, $other->hours)
+        return $this->seconds === $other->seconds
             && self::floatEquals($this->period, $other->period)
             && $this->metadata->equals($other->metadata);
     }
@@ -35,8 +49,7 @@ final class KPIData implements Arrayable, JsonSerializable
     public function toArray(): array
     {
         return [
-            'minutes' => $this->minutes,
-            'hours' => $this->hours,
+            'seconds' => $this->seconds,
             'period' => $this->period,
             'metadata' => $this->metadata->toArray(),
         ];
