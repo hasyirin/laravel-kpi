@@ -5,8 +5,8 @@ namespace Hasyirin\KPI\Concerns;
 use BackedEnum;
 use Carbon\CarbonInterface;
 use Hasyirin\KPI\Contracts\HasMovement;
-use Hasyirin\KPI\Events\Passed;
 use Hasyirin\KPI\Models\Movement;
+use Hasyirin\KPI\Support\ResourceLock;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
@@ -22,17 +22,17 @@ trait InteractsWithMovement
     public function movement(): MorphOne
     {
         /** @var class-string<Movement> $model */
-        $model = config('kpi.models.movement');
+        $model = config('kpi.models.movement', Movement::class);
 
         return $this->morphOne($model, 'movable')
-            ->ofMany(['received_at' => 'max'], fn ($query) => $query->whereNull('completed_at'));
+            ->ofMany(['id' => 'max'], fn ($query) => $query->whereNull('completed_at'));
     }
 
     /** @return MorphMany<Movement, $this> */
     public function movements(): MorphMany
     {
         /** @var class-string<Movement> $model */
-        $model = config('kpi.models.movement');
+        $model = config('kpi.models.movement', Movement::class);
 
         return $this->morphMany($model, 'movable');
     }
@@ -47,48 +47,12 @@ trait InteractsWithMovement
         ?bool $supersede = null,
         bool $expectsChildren = false,
     ): Movement {
-        $receivedAt ??= now();
+        $this->unsetRelation('movement');
 
-        return $this->movements()->getRelated()->getConnection()->transaction(function () use (
-            $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren
-        ) {
-            $previous = $this->movements()
-                ->whereNull('parent_id')
-                ->whereNull('completed_at')
-                ->lockForUpdate()
-                ->latest('received_at')
-                ->latest('id')
-                ->first();
-
-            $superseded = null;
-
-            if ($previous && $this->shouldSupersedeRoot($previous, $supersede)) {
-                $previous->closeLocked($receivedAt, $sender ? null : $actor);
-                $superseded = $previous;
-            }
-
-            $movement = $this->movements()->make([
-                'previous_id' => $previous?->getKey(),
-                'sender_id' => $sender?->getKey(),
-                'sender_type' => $sender?->getMorphClass(),
-                'actor_id' => $actor?->getKey(),
-                'actor_type' => $actor?->getMorphClass(),
-                'received_at' => $receivedAt,
-                'status' => $status instanceof BackedEnum ? $status->value : $status,
-                'notes' => $notes,
-                'properties' => $properties ?? [],
-                'expects_children' => $expectsChildren,
-            ]);
-
-            $movement->movable()->associate($this);
-            $movement->save();
-
-            $this->load('movement');
-
-            event(new Passed($movement, $superseded));
-
-            return $movement;
-        });
+        return $this->movements()->getRelated()->passOnLevel(
+            ResourceLock::forResource($this), $this->getMorphClass(), $this->getKey(), null,
+            $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren, false,
+        );
     }
 
     public function passIfNotCurrent(
@@ -101,38 +65,11 @@ trait InteractsWithMovement
         ?bool $supersede = null,
         bool $expectsChildren = false,
     ): Movement|false {
-        $latestRoot = $this->movements()
-            ->whereNull('parent_id')
-            ->whereNull('completed_at')
-            ->latest('received_at')
-            ->latest('id')
-            ->first();
+        $this->unsetRelation('movement');
 
-        $statusValue = $status instanceof BackedEnum ? $status->value : $status;
-        $sameStatus = $latestRoot?->status === (string) $statusValue;
-        $sameActor = $latestRoot?->actor_type === $actor?->getMorphClass()
-            && (string) $latestRoot?->actor_id === (string) $actor?->getKey();
-
-        if ($sameStatus && $sameActor) {
-            return false;
-        }
-
-        return $this->pass($status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren);
-    }
-
-    protected function shouldSupersedeRoot(Movement $previous, ?bool $supersede): bool
-    {
-        if ($supersede === false) {
-            return false;
-        }
-        if ($supersede === true) {
-            return true;
-        }
-
-        if ($previous->expects_children) {
-            return false;
-        }
-
-        return $previous->children()->whereNull('completed_at')->doesntExist();
+        return $this->movements()->getRelated()->passOnLevel(
+            ResourceLock::forResource($this), $this->getMorphClass(), $this->getKey(), null,
+            $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren, true,
+        );
     }
 }

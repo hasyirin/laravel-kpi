@@ -25,6 +25,7 @@ use LogicException;
  * @property int $previous_id
  * @property int $movable_id
  * @property string $movable_type
+ * @property int $position
  * @property int $sender_id
  * @property string $sender_type
  * @property ?int $actor_id
@@ -65,6 +66,7 @@ class Movement extends Model
     protected function casts(): array
     {
         return [
+            'position' => 'integer',
             'period' => 'float',
             'seconds' => 'integer',
             'properties' => 'array',
@@ -183,13 +185,7 @@ class Movement extends Model
      */
     public function closeLocked(CarbonInterface $at, ?Model $backfillActor = null): bool
     {
-        $row = $this->newQueryWithoutScopes()->whereKey($this->getKey())->lockForUpdate()->toBase()->first();
-
-        if ($row === null) {
-            throw new LogicException("Cannot close missing movement {$this->getKey()}.");
-        }
-
-        $this->setRawAttributes((array) $row, true);
+        $this->fillFromLockedRow();
 
         if (filled($this->completed_at)) {
             return false;
@@ -213,6 +209,103 @@ class Movement extends Model
         return true;
     }
 
+    protected function fillFromLockedRow(): void
+    {
+        $row = $this->newQueryWithoutScopes()->whereKey($this->getKey())->lockForUpdate()->toBase()->first();
+
+        if ($row === null) {
+            throw new LogicException("Cannot lock missing movement {$this->getKey()}.");
+        }
+
+        $this->setRawAttributes((array) $row, true);
+    }
+
+    /**
+     * @internal
+     *
+     * @return ($onlyIfNotCurrent is true ? self|false : self)
+     */
+    public function passOnLevel(
+        ResourceLock $lock,
+        string $movableType,
+        int|string $movableId,
+        ?self $parent,
+        BackedEnum|string $status,
+        ?Model $sender,
+        ?Model $actor,
+        ?CarbonInterface $receivedAt,
+        ?string $notes,
+        Collection|array|null $properties,
+        ?bool $supersede,
+        bool $expectsChildren,
+        bool $onlyIfNotCurrent,
+    ): self|false {
+        $statusValue = (string) ($status instanceof BackedEnum ? $status->value : $status);
+
+        return $lock->run($this->getConnection(), function () use (
+            $movableType, $movableId, $parent, $statusValue, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren, $onlyIfNotCurrent
+        ) {
+            if ($parent !== null) {
+                $parent->fillFromLockedRow();
+
+                if (filled($parent->completed_at)) {
+                    throw new LogicException('Cannot pass from a completed movement.');
+                }
+            }
+
+            $at = ($receivedAt ?? now())->copy()->setTimezone(config('app.timezone'));
+
+            $level = $this->newQueryWithoutScopes()
+                ->where('movable_type', $movableType)
+                ->where('movable_id', $movableId)
+                ->where('level_key', $parent?->getKey() ?? 0)
+                ->orderByDesc('position');
+
+            $link = $level->clone()->first();
+            $target = $level->clone()->whereNull('completed_at')->first();
+
+            if ($onlyIfNotCurrent && $target?->isCurrent($statusValue, $actor)) {
+                return false;
+            }
+
+            $superseded = null;
+
+            if ($target !== null && $this->shouldSupersede($target, $supersede)) {
+                $superseded = $target->closeLocked($at, $sender ? null : $actor) ? $target : null;
+            }
+
+            $movement = $this->newInstance();
+            $movement->forceFill([
+                'parent_id' => $parent?->getKey(),
+                'previous_id' => $link?->getKey(),
+                'position' => ($link->position ?? 0) + 1,
+                'movable_type' => $movableType,
+                'movable_id' => $movableId,
+                'sender_id' => $sender?->getKey(),
+                'sender_type' => $sender?->getMorphClass(),
+                'actor_id' => $actor?->getKey(),
+                'actor_type' => $actor?->getMorphClass(),
+                'received_at' => $at,
+                'status' => $statusValue,
+                'notes' => $notes,
+                'properties' => $properties ?? [],
+                'expects_children' => $expectsChildren,
+            ]);
+            $movement->save();
+
+            event(new Passed($movement, $superseded));
+
+            return $movement;
+        });
+    }
+
+    protected function isCurrent(string $status, ?Model $actor): bool
+    {
+        return (string) $this->status === $status
+            && $this->actor_type === $actor?->getMorphClass()
+            && (string) $this->actor_id === (string) $actor?->getKey();
+    }
+
     public function pass(
         BackedEnum|string $status,
         ?Model $sender = null,
@@ -223,55 +316,13 @@ class Movement extends Model
         ?bool $supersede = null,
         bool $expectsChildren = false,
     ): self {
-        $receivedAt ??= now();
-
-        return $this->getConnection()->transaction(function () use (
-            $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren
-        ) {
-            if ($this->lockAndCheckCompleted()) {
-                throw new LogicException('Cannot pass from a completed movement.');
-            }
-
-            $previous = $this->children()
-                ->whereNull('completed_at')
-                ->lockForUpdate()
-                ->latest('received_at')
-                ->latest('id')
-                ->first();
-
-            $superseded = null;
-
-            if ($previous && $this->shouldSupersede($previous, $supersede)) {
-                $previous->closeLocked($receivedAt, $sender ? null : $actor);
-                $superseded = $previous;
-            }
-
-            $movement = $this->children()->make([
-                'previous_id' => $previous?->getKey(),
-                'sender_id' => $sender?->getKey(),
-                'sender_type' => $sender?->getMorphClass(),
-                'actor_id' => $actor?->getKey(),
-                'actor_type' => $actor?->getMorphClass(),
-                'received_at' => $receivedAt,
-                'status' => $status instanceof BackedEnum ? $status->value : $status,
-                'notes' => $notes,
-                'properties' => $properties ?? [],
-                'expects_children' => $expectsChildren,
-            ]);
-
-            // Inherit morph keys from the receiver. Direct assignment avoids loading the
-            // resource model just to call ->movable()->associate() and discard it.
-            $movement->movable_id = $this->movable_id;
-            $movement->movable_type = $this->movable_type;
-            $movement->save();
-
-            event(new Passed($movement, $superseded));
-
-            return $movement;
-        });
+        return $this->passOnLevel(
+            ResourceLock::forMovement($this), $this->movable_type, $this->movable_id, $this,
+            $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren, false,
+        );
     }
 
-    protected function shouldSupersede(self $previous, ?bool $supersede): bool
+    protected function shouldSupersede(self $target, ?bool $supersede): bool
     {
         if ($supersede === false) {
             return false;
@@ -281,18 +332,11 @@ class Movement extends Model
         }
 
         // null = inferred: close iff (no open children) AND (expects_children == false)
-        if ($previous->expects_children) {
+        if ($target->expects_children) {
             return false;
         }
 
-        return $previous->children()->whereNull('completed_at')->doesntExist();
-    }
-
-    protected function lockAndCheckCompleted(): bool
-    {
-        return filled(
-            $this->newQueryWithoutScopes()->whereKey($this->getKey())->lockForUpdate()->value('completed_at')
-        );
+        return $target->children()->whereNull('completed_at')->doesntExist();
     }
 
     public function passIfNotCurrent(
@@ -305,22 +349,10 @@ class Movement extends Model
         ?bool $supersede = null,
         bool $expectsChildren = false,
     ): self|false {
-        $latest = $this->children()
-            ->whereNull('completed_at')
-            ->latest('received_at')
-            ->latest('id')
-            ->first();
-
-        $statusValue = $status instanceof BackedEnum ? $status->value : $status;
-        $sameStatus = $latest?->status === (string) $statusValue;
-        $sameActor = $latest?->actor_type === $actor?->getMorphClass()
-            && (string) $latest?->actor_id === (string) $actor?->getKey();
-
-        if ($sameStatus && $sameActor) {
-            return false;
-        }
-
-        return $this->pass($status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren);
+        return $this->passOnLevel(
+            ResourceLock::forMovement($this), $this->movable_type, $this->movable_id, $this,
+            $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren, true,
+        );
     }
 
     public function movable(): MorphTo

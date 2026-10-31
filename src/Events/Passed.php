@@ -11,5 +11,5 @@ class Passed implements ShouldDispatchAfterCommit
 {
     use Dispatchable, SerializesModels;
 
-    public function __construct(public Movement $current, public ?Movement $previous = null) {}
+    public function __construct(public Movement $current, public ?Movement $superseded = null) {}
 }

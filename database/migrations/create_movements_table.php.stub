@@ -31,6 +31,12 @@ return new class extends Migration
 
             $table->morphs('movable');
 
+            $table->unsignedInteger('position');
+            $levelKey = $table->unsignedBigInteger('level_key');
+            Schema::getConnection()->getDriverName() === 'pgsql'
+                ? $levelKey->storedAs('COALESCE(parent_id, 0)')
+                : $levelKey->virtualAs('COALESCE(parent_id, 0)');
+
             $table->nullableMorphs('sender');
             $table->nullableMorphs('actor');
 
@@ -49,6 +55,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('parent_id');
+            $table->unique(['movable_type', 'movable_id', 'level_key', 'position'], "{$this->table}_level_position_unique");
         });
 
         if (Schema::getConnection()->getDriverName() !== 'sqlite') {

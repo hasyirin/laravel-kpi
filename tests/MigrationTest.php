@@ -31,6 +31,7 @@ it('rejects a movement without received_at', function () {
         'received_at' => null,
         'properties' => [],
     ]);
+    $movement->position = 1;
 
     expect(fn () => $movement->save())->toThrow(QueryException::class);
 });
@@ -92,6 +93,24 @@ it('stores integer seconds, not hours', function () {
         ->and(Schema::hasColumn('movements', 'deleted_at'))->toBeFalse();
 });
 
+it('has a unique index on the resource, the level and the position', function () {
+    $unique = collect(Schema::getIndexes('movements'))
+        ->filter(fn (array $index) => $index['unique'] && ! $index['primary'])
+        ->pluck('columns')
+        ->all();
+
+    expect($unique)->toBe([['movable_type', 'movable_id', 'level_key', 'position']]);
+});
+
+it('generates level_key in the database', function () {
+    DB::table('tasks')->insert(['title' => 'T']);
+
+    expect(fn () => DB::table('movements')->insert([
+        'movable_type' => 'task', 'movable_id' => 1, 'position' => 1, 'level_key' => 5, 'status' => 'open',
+        'properties' => '[]', 'received_at' => '2025-01-01 00:00:00',
+    ]))->toThrow(QueryException::class);
+});
+
 it('uses dateTime columns for the movement times', function () {
     if (! in_array(DB::getDriverName(), ['mysql', 'mariadb'])) {
         $this->markTestSkipped('PostgreSQL reports dateTime as timestamp, and only MySQL TIMESTAMP has the 2038 limit.');
@@ -116,7 +135,7 @@ it('adds the CHECK constraints to the prefixed table', function () {
         $this->migration('create_movements_table')->up();
 
         DB::table('prefixed_movements')->insert([
-            'movable_type' => 'task', 'movable_id' => 1, 'status' => 'open', 'properties' => '[]',
+            'movable_type' => 'task', 'movable_id' => 1, 'position' => 1, 'status' => 'open', 'properties' => '[]',
             'received_at' => '2025-01-02 00:00:00', 'completed_at' => null,
         ]);
 

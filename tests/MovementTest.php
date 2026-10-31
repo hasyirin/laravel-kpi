@@ -10,6 +10,7 @@ use Hasyirin\KPI\Tests\TestSupport\Enums\TaskStatus;
 use Hasyirin\KPI\Tests\TestSupport\Models\CustomMovement;
 use Hasyirin\KPI\Tests\TestSupport\Models\StringKeyTask;
 use Hasyirin\KPI\Tests\TestSupport\Models\Task;
+use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -130,11 +131,11 @@ it('dispatches Passed event', function () {
     $task->pass('open');
 
     Event::assertDispatched(Passed::class, function (Passed $event) {
-        return $event->current->status === 'open' && $event->previous === null;
+        return $event->current->status === 'open' && $event->superseded === null;
     });
 });
 
-it('dispatches Passed event with previous movement', function () {
+it('dispatches Passed event with the superseded movement', function () {
     $task = Task::create(['title' => 'Test']);
     $task->pass('open');
 
@@ -142,7 +143,7 @@ it('dispatches Passed event with previous movement', function () {
     $task->pass('closed');
 
     Event::assertDispatched(Passed::class, function (Passed $event) {
-        return $event->current->status === 'closed' && $event->previous !== null;
+        return $event->current->status === 'closed' && $event->superseded !== null;
     });
 });
 
@@ -255,6 +256,7 @@ it('persists parent_id when set', function () {
         'received_at' => now(),
         'properties' => [],
     ]);
+    $movement->position = 1;
     $movement->save();
 
     expect($movement->fresh()->parent_id)->toBe($root->id);
@@ -271,6 +273,7 @@ it('persists expects_children when set', function () {
         'properties' => [],
         'expects_children' => true,
     ]);
+    $movement->position = 1;
     $movement->save();
 
     expect($movement->fresh()->expects_children)->toBeTrue();
@@ -297,6 +300,7 @@ it('resolves parent relation', function () {
         'received_at' => now(),
         'properties' => [],
     ]);
+    $child->position = 1;
     $child->save();
 
     expect($child->parent)->toBeInstanceOf(Movement::class)
@@ -314,7 +318,7 @@ it('resolves children relation', function () {
     $task = Task::create(['title' => 'Test']);
     $root = $task->pass('open');
 
-    foreach (['a', 'b', 'c'] as $status) {
+    foreach (['a', 'b', 'c'] as $index => $status) {
         $child = new Movement([
             'parent_id' => $root->id,
             'movable_id' => $task->id,
@@ -323,6 +327,7 @@ it('resolves children relation', function () {
             'received_at' => now(),
             'properties' => [],
         ]);
+        $child->position = $index + 1;
         $child->save();
     }
 
@@ -344,6 +349,7 @@ it('roots scope filters parentless movements', function () {
         'received_at' => now(),
         'properties' => [],
     ]);
+    $child->position = 1;
     $child->save();
 
     expect(Movement::query()->roots()->pluck('id')->all())->toBe([$root->id]);
@@ -426,6 +432,7 @@ it('complete() cascades through open descendants with same timestamp', function 
         'received_at' => Carbon::parse('2025-01-01 08:00'),
         'properties' => [],
     ]);
+    $child->position = 1;
     $child->save();
 
     $grandchild = new Movement([
@@ -436,6 +443,7 @@ it('complete() cascades through open descendants with same timestamp', function 
         'received_at' => Carbon::parse('2025-01-01 08:00'),
         'properties' => [],
     ]);
+    $grandchild->position = 1;
     $grandchild->save();
 
     $at = Carbon::parse('2025-01-01 12:00');
@@ -460,6 +468,7 @@ it('complete() fires Completed event for receiver and each cascaded descendant',
         'received_at' => now(),
         'properties' => [],
     ]);
+    $child->position = 1;
     $child->save();
 
     $root->complete();
@@ -491,7 +500,7 @@ it('Movement::pass() does not auto-complete the receiver', function () {
     expect($root->fresh()->completed_at)->toBeNull();
 });
 
-it('Movement::pass() sets previous_id to most recent open sibling and supersedes it by default', function () {
+it('Movement::pass() links to the latest sibling and supersedes it by default', function () {
     Carbon::setTestNow('2025-01-01 09:00');
     $task = Task::create(['title' => 'Test']);
     $root = $task->pass('agency');
@@ -505,6 +514,10 @@ it('Movement::pass() sets previous_id to most recent open sibling and supersedes
     expect($devin->parent_id)->toBe($root->id)
         ->and($devin->previous_id)->toBe($bob->id)
         ->and($bob->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 11:00:00');
+
+    $devin->complete();
+
+    expect($root->pass('with_eve')->previous_id)->toBe($devin->id);
 
     Carbon::setTestNow();
 });
@@ -563,7 +576,7 @@ it('Movement::pass() persists expects_children on the new child', function () {
     expect($child->fresh()->expects_children)->toBeTrue();
 });
 
-it('Movement::pass() dispatches Passed event with previous null when no supersede happened', function () {
+it('Movement::pass() dispatches Passed event with superseded null when no supersede happened', function () {
     $task = Task::create(['title' => 'Test']);
     $root = $task->pass('agency');
 
@@ -571,11 +584,11 @@ it('Movement::pass() dispatches Passed event with previous null when no supersed
     $root->pass('with_bob');  // first child, no previous sibling
 
     Event::assertDispatched(Passed::class, function (Passed $event) {
-        return $event->current->status === 'with_bob' && $event->previous === null;
+        return $event->current->status === 'with_bob' && $event->superseded === null;
     });
 });
 
-it('Movement::pass() dispatches Passed event with previous when supersede fires', function () {
+it('Movement::pass() dispatches Passed event with superseded when supersede fires', function () {
     $task = Task::create(['title' => 'Test']);
     $root = $task->pass('agency');
     $bob = $root->pass('with_bob');
@@ -584,7 +597,7 @@ it('Movement::pass() dispatches Passed event with previous when supersede fires'
     $root->pass('with_devin');  // supersedes bob
 
     Event::assertDispatched(Passed::class, function (Passed $event) use ($bob) {
-        return $event->current->status === 'with_devin' && $event->previous?->id === $bob->id;
+        return $event->current->status === 'with_devin' && $event->superseded?->id === $bob->id;
     });
 });
 
@@ -645,13 +658,13 @@ it('Model::pass() persists expects_children on the new root', function () {
     expect($root->fresh()->expects_children)->toBeTrue();
 });
 
-it('Passed::previous is null when no supersede happened on Model::pass()', function () {
+it('Passed::superseded is null when no supersede happened on Model::pass()', function () {
     $task = Task::create(['title' => 'Test']);
 
     Event::fake([Passed::class]);
     $task->pass('open');
 
-    Event::assertDispatched(Passed::class, fn (Passed $e) => $e->previous === null);
+    Event::assertDispatched(Passed::class, fn (Passed $e) => $e->superseded === null);
 });
 
 // --- Movement::passIfNotCurrent() ---
@@ -721,7 +734,7 @@ it('handles the multi-track worked example', function () {
     // Previous chain
     expect($m2->previous_id)->toBeNull()           // first child of #1
         ->and($m3->previous_id)->toBe($m2->id)     // sibling of bob, supersede:false so bob still open
-        ->and($m4->previous_id)->toBe($m1->id);    // most recent open root before review
+        ->and($m4->previous_id)->toBe($m1->id);    // latest root before review
 
     // All four should still be open
     expect($m1->fresh()->completed_at)->toBeNull()
@@ -735,7 +748,7 @@ it('handles the multi-track worked example', function () {
     // Open children of #1
     expect($m1->children()->open()->count())->toBe(2);
 
-    // $task->movement returns the latest open by received_at — most recently passed
+    // $task->movement returns the last-written open movement
     expect($task->fresh()->movement->id)->toBe($m4->id);
 });
 
@@ -801,7 +814,7 @@ it('refuses to pass from a movement completed through another instance', functio
         ->and($root->children()->count())->toBe(0);
 });
 
-it('locks a movement before its children when completing it', function () {
+it('locks the resource and the movement before it reads the children when completing it', function () {
     $task = Task::create(['title' => 'Test']);
     $root = $task->pass('root');
     $root->pass('child');
@@ -824,8 +837,9 @@ it('locks a movement before its children when passing from it', function () {
     $root->pass('next');
     $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'select'))->map(fn (string $sql) => str_replace(['"', '`'], '', $sql))->values();
 
-    expect($selects[0])->toContain('where movements.id = ?')
-        ->and($selects[1])->toContain('where movements.parent_id = ?');
+    expect($selects[0])->toContain('from tasks where id = ?')
+        ->and($selects[1])->toContain('where movements.id = ?')
+        ->and($selects[2])->toContain('level_key');
 });
 
 // --- Same-second movements ---
@@ -1039,7 +1053,7 @@ it('deletes the children of a deleted movement', function () {
 
 // --- Multi-root supersede footgun ---
 
-it('Model::pass() with default supersede on multiple open roots closes only the most-recent-by-received_at', function () {
+it('Model::pass() with default supersede on multiple open roots closes only the last written', function () {
     Carbon::setTestNow('2025-01-01 09:00');
     $task = Task::create(['title' => 'Test']);
     $first = $task->pass('first');
@@ -1348,4 +1362,473 @@ it('reads open children without a lock when completing', function () {
     expect($selects[0])->toContain('tasks')->toContain('for update')
         ->and($selects[1])->toContain('where movements.id = ?')->toContain('for update')
         ->and($selects[2])->toContain('where movements.parent_id = ?')->not->toContain('for update');
+});
+
+// --- One write path ---
+
+it('rejects a duplicate position on a level', function () {
+    $task = Task::create(['title' => 'T']);
+    $task->pass('a');
+
+    expect(fn () => $task->movements()->make(['status' => 'x', 'received_at' => now()])->forceFill(['position' => 1])->save())
+        ->toThrow(UniqueConstraintViolationException::class);
+});
+
+it('allows the worked example of the v2 spec', function () {
+    $task = Task::create(['title' => 'T']);
+    $root1 = $task->pass('alice', supersede: false, expectsChildren: true);
+    $bob = $root1->pass('bob', supersede: false);
+    $dave = $root1->pass('dave', supersede: false);
+    $root4 = $task->pass('charlie', supersede: false);
+    $assistant = $bob->pass('assistant');
+
+    expect(Movement::query()->open()->count())->toBe(5)
+        ->and($root4->position)->toBe(2)
+        ->and($dave->position)->toBe(2)
+        ->and($assistant->position)->toBe(1);
+});
+
+it('computes level_key in the database and never writes it', function () {
+    $task = Task::create(['title' => 'T']);
+    $root = $task->pass('a');
+    $child = $root->pass('b');
+
+    expect(DB::table('movements')->where('id', $root->id)->value('level_key'))->toEqual(0)
+        ->and(DB::table('movements')->where('id', $child->id)->value('level_key'))->toEqual($root->id)
+        ->and($child->getAttributes())->not->toHaveKey('level_key')
+        ->and($child->fresh()->getAttributes())->toHaveKey('level_key');
+});
+
+it('does not write level_key when it saves a row it read', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a');
+    $updates = [];
+    DB::listen(function ($query) use (&$updates) {
+        if (str_starts_with($query->sql, 'update')) {
+            $updates[] = $query->sql;
+        }
+    });
+
+    $first->complete();
+    $task->pass('b');
+    $first->fresh()->update(['notes' => 'changed']);
+
+    expect($updates)->not->toBeEmpty();
+    foreach ($updates as $sql) {
+        expect($sql)->not->toContain('level_key');
+    }
+});
+
+it('links to the latest movement on the level even when closed', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a');
+    $first->complete();
+    $second = $task->pass('b');
+
+    expect($second->previous_id)->toBe($first->id)->and($second->position)->toBe(2);
+});
+
+it('does not collide after a backdated pass', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a', receivedAt: Carbon::parse('2025-01-02 10:00'));
+    $backdated = $task->pass('b', receivedAt: Carbon::parse('2025-01-01 10:00'));
+    $next = $task->pass('c');
+
+    expect($backdated->previous_id)->toBe($first->id)
+        ->and($first->fresh()->seconds)->toBe(0)
+        ->and($next->previous_id)->toBe($backdated->id)
+        ->and($next->position)->toBe(3);
+});
+
+it('reuses the position of a deleted tail', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a');
+    $second = $task->pass('b');
+    $second->delete();
+
+    $third = $task->pass('c');
+
+    expect($third->position)->toBe(2)
+        ->and($third->previous_id)->toBe($first->id);
+});
+
+it('keeps working after a head or a mid-chain row is deleted', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a');
+    $second = $task->pass('b');
+    $third = $task->pass('c');
+
+    $first->delete();
+    $afterHead = $task->pass('d');
+
+    $third->delete();
+    $afterMid = $task->pass('e');
+
+    expect($second->fresh()->previous_id)->toBeNull()
+        ->and($afterHead->position)->toBe(4)
+        ->and($afterHead->previous_id)->toBe($third->id)
+        ->and($afterHead->fresh()->previous_id)->toBeNull()
+        ->and($afterMid->position)->toBe(5)
+        ->and($afterMid->previous_id)->toBe($afterHead->id);
+});
+
+it('keeps working after a parent is deleted', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a', expectsChildren: true);
+    $child = $first->pass('child');
+    $grandchild = $child->pass('grandchild');
+    $second = $task->pass('b');
+
+    $first->delete();
+    $third = $task->pass('c');
+
+    expect(Movement::find($child->id))->toBeNull()
+        ->and(Movement::find($grandchild->id))->toBeNull()
+        ->and($second->fresh()->previous_id)->toBeNull()
+        ->and($third->position)->toBe(3)
+        ->and($third->previous_id)->toBe($second->id);
+});
+
+it('keeps levels of different resources apart', function () {
+    $task = Task::create(['title' => 'T']);
+    $other = Task::create(['title' => 'O']);
+    $task->pass('a');
+
+    $movement = $other->pass('b');
+
+    expect($movement->position)->toBe(1)
+        ->and($movement->previous_id)->toBeNull();
+});
+
+it('reads now after the lock', function () {
+    Carbon::setTestNow('2025-01-01 10:00:00');
+    $task = Task::create(['title' => 'T']);
+    DB::listen(function ($query) {
+        if (str_contains($query->sql, 'tasks')) {
+            Carbon::setTestNow('2025-01-01 11:00:00');
+        }
+    });
+
+    expect($task->pass('a')->received_at->format('H:i'))->toBe('11:00');
+
+    Carbon::setTestNow();
+});
+
+it('takes a new default received_at on each attempt', function () {
+    Carbon::setTestNow('2025-01-01 10:00:00');
+    $task = Task::create(['title' => 'T']);
+    $attempts = 0;
+    Movement::saving(function () use (&$attempts) {
+        if (++$attempts === 1) {
+            Carbon::setTestNow('2025-01-01 11:00:00');
+
+            throw new UniqueConstraintViolationException('testing', 'insert', [], new RuntimeException('unique'));
+        }
+    });
+
+    expect($task->pass('a')->received_at->format('H:i'))->toBe('11:00');
+
+    Carbon::setTestNow();
+});
+
+it('converts a given receivedAt to the app time zone', function () {
+    config()->set('app.timezone', 'UTC');
+    $task = Task::create(['title' => 'T']);
+    $at = Carbon::parse('2025-01-01 17:00', 'Asia/Kuala_Lumpur');
+
+    $movement = $task->pass('a', receivedAt: $at);
+
+    expect(DB::table('movements')->where('id', $movement->id)->value('received_at'))->toStartWith('2025-01-01 09:00:00')
+        ->and($at->timezoneName)->toBe('Asia/Kuala_Lumpur');
+});
+
+it('skips the close of an already closed row', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('a');
+    $stale = Movement::find($movement->id);
+    $movement->complete();
+    Event::fake([Completed::class]);
+
+    expect($stale->closeLocked(now()))->toBeFalse();
+    Event::assertNotDispatched(Completed::class);
+});
+
+it('skips the close of a stale target and reports no superseded movement', function () {
+    $task = Task::create(['title' => 'T']);
+    $root = $task->pass('root', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $child = $root->pass('child', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $closed = false;
+    DB::listen(function ($query) use (&$closed, $child) {
+        if (! $closed && str_contains($query->sql, 'parent_id') && str_contains($query->sql, 'completed_at')) {
+            $closed = true;
+            DB::table('movements')->where('id', $child->id)->update(['completed_at' => '2025-01-01 09:00:00']);
+        }
+    });
+    $superseded = 'unset';
+    $completed = 0;
+    Event::listen(Passed::class, function (Passed $event) use (&$superseded) {
+        $superseded = $event->superseded;
+    });
+    Event::listen(Completed::class, function () use (&$completed) {
+        $completed++;
+    });
+
+    $next = $root->pass('next');
+
+    expect($closed)->toBeTrue()
+        ->and($superseded)->toBeNull()
+        ->and($completed)->toBe(0)
+        ->and($next->previous_id)->toBe($child->id)
+        ->and($child->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 09:00:00');
+});
+
+it('throws when passing from a completed movement, checked inside the lock', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('a');
+    $stale = Movement::find($movement->id);
+    $movement->complete();
+    DB::enableQueryLog();
+
+    expect(fn () => $stale->pass('x'))->toThrow(LogicException::class)
+        ->and(fn () => $stale->passIfNotCurrent('x'))->toThrow(LogicException::class)
+        ->and(str_replace(['"', '`'], '', DB::getQueryLog()[0]['query']))->toContain('from tasks');
+});
+
+it('fills the instance from the row when passing from a movement', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('a');
+    $stale = Movement::find($movement->id);
+    $movement->update(['notes' => 'newer']);
+    $stale->notes = 'unsaved';
+
+    $stale->pass('x');
+
+    expect($stale->notes)->toBe('newer')
+        ->and($stale->isDirty())->toBeFalse();
+});
+
+it('runs passIfNotCurrent inside the lock', function () {
+    $task = Task::create(['title' => 'T']);
+    $task->pass('a');
+    DB::enableQueryLog();
+
+    expect($task->passIfNotCurrent('a'))->toBeFalse();
+
+    $selects = collect(DB::getQueryLog())->pluck('query')->map(fn (string $sql) => str_replace(['"', '`'], '', $sql))->values();
+
+    expect($selects[0])->toContain('from tasks')
+        ->and($selects[1])->toContain('from movements');
+});
+
+it('runs Movement::passIfNotCurrent inside the lock', function () {
+    $task = Task::create(['title' => 'T']);
+    $root = $task->pass('a');
+    $root->pass('b');
+    DB::enableQueryLog();
+
+    expect($root->passIfNotCurrent('b'))->toBeFalse();
+
+    $selects = collect(DB::getQueryLog())->pluck('query')->map(fn (string $sql) => str_replace(['"', '`'], '', $sql))->values();
+
+    expect($selects[0])->toContain('from tasks')
+        ->and($selects[1])->toContain('where movements.id = ?');
+});
+
+it('compares passIfNotCurrent with the latest open movement, not a closed one', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a', supersede: false);
+    $second = $task->pass('b', supersede: false);
+    $second->complete();
+
+    expect($task->passIfNotCurrent('a'))->toBeFalse()
+        ->and($first->fresh()->completed_at)->toBeNull();
+});
+
+it('compares a BackedEnum status and a string-key actor as strings', function () {
+    $task = Task::create(['title' => 'T']);
+    $actor = StringKeyTask::create(['title' => 'Actor']);
+    $root = $task->pass('root');
+    $root->pass(TaskStage::Review, actor: $actor);
+    $task->pass(TaskStage::Review, actor: $actor, supersede: false);
+
+    expect($task->passIfNotCurrent(TaskStage::Review, actor: $actor))->toBeFalse()
+        ->and($root->passIfNotCurrent(TaskStage::Review, actor: $actor))->toBeFalse()
+        ->and($task->passIfNotCurrent(TaskStage::Draft, actor: $actor))->toBeInstanceOf(Movement::class);
+});
+
+it('back-fills the actor on the same update as completed_at', function () {
+    $task = Task::create(['title' => 'T']);
+    $actor = Task::create(['title' => 'Actor']);
+    $first = $task->pass('a');
+    $updates = [];
+    DB::listen(function ($query) use (&$updates) {
+        if (str_starts_with($query->sql, 'update') && str_contains($query->sql, 'movements')) {
+            $updates[] = $query->sql;
+        }
+    });
+
+    $task->pass('b', actor: $actor);
+
+    expect($updates)->toHaveCount(1)
+        ->and($updates[0])->toContain('actor_id')->toContain('completed_at')
+        ->and($first->fresh()->actor_id)->toBe($actor->id);
+});
+
+it('does not back-fill the actor when the pass has a sender', function () {
+    $task = Task::create(['title' => 'T']);
+    $actor = Task::create(['title' => 'Actor']);
+    $sender = Task::create(['title' => 'Sender']);
+    $first = $task->pass('a');
+
+    $task->pass('b', sender: $sender, actor: $actor);
+
+    expect($first->fresh()->actor_id)->toBeNull()
+        ->and($first->fresh()->completed_at)->not->toBeNull();
+});
+
+it('unsets the cached movement relation before Passed', function () {
+    $task = Task::create(['title' => 'T']);
+    $task->pass('a');
+    $task->load('movement');
+    $seen = null;
+    Event::listen(Passed::class, function () use ($task, &$seen) {
+        $seen = $task->movement->status;
+    });
+
+    $task->pass('b');
+
+    expect($seen)->toBe('b')
+        ->and($task->movement->status)->toBe('b');
+});
+
+it('returns the last-written open movement from movement()', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a', receivedAt: Carbon::parse('2025-01-02'), supersede: false);
+    $second = $task->pass('b', receivedAt: Carbon::parse('2025-01-01'), supersede: false);
+
+    expect($task->fresh()->movement->id)->toBe($second->id);
+});
+
+it('returns the open movement of any depth from movement()', function () {
+    $task = Task::create(['title' => 'T']);
+    $root = $task->pass('root');
+    $child = $root->pass('child');
+    $child->complete();
+
+    expect($task->fresh()->movement->id)->toBe($root->id);
+
+    $next = $root->pass('next');
+
+    expect($task->fresh()->movement->id)->toBe($next->id);
+});
+
+it('dispatches Passed once when the write retries', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $transactions = new class(app('db.transactions'))
+    {
+        public int $queued = 0;
+
+        public function __construct(private DatabaseTransactionsManager $manager) {}
+
+        public function addCallback(callable $callback): void
+        {
+            $this->manager->addCallback($callback);
+
+            if (++$this->queued === 2) {
+                throw new UniqueConstraintViolationException('testing', 'insert', [], new RuntimeException('unique'));
+            }
+        }
+    };
+    Event::setTransactionManagerResolver(fn () => $transactions);
+    $passed = 0;
+    $completed = 0;
+    Event::listen(Passed::class, function () use (&$passed) {
+        $passed++;
+    });
+    Event::listen(Completed::class, function () use (&$completed) {
+        $completed++;
+    });
+
+    $next = $task->pass('next');
+
+    expect($transactions->queued)->toBe(4)
+        ->and($passed)->toBe(1)
+        ->and($completed)->toBe(1)
+        ->and(Movement::query()->where('status', 'next')->count())->toBe(1)
+        ->and($next->position)->toBe(2)
+        ->and($next->previous_id)->toBe($first->id);
+});
+
+it('retries a real unique violation and writes one row', function () {
+    $task = Task::create(['title' => 'T']);
+    $attempts = 0;
+    Movement::creating(function (Movement $movement) use (&$attempts) {
+        if (++$attempts === 1) {
+            DB::table('movements')->insert([
+                'movable_type' => $movement->movable_type,
+                'movable_id' => $movement->movable_id,
+                'position' => $movement->position,
+                'status' => 'competitor',
+                'properties' => '[]',
+                'received_at' => '2025-01-01 08:00:00',
+            ]);
+        }
+    });
+    $passed = 0;
+    Event::listen(Passed::class, function () use (&$passed) {
+        $passed++;
+    });
+
+    $movement = $task->pass('a');
+
+    expect($attempts)->toBe(2)
+        ->and($passed)->toBe(1)
+        ->and(Movement::query()->pluck('status')->all())->toBe(['a'])
+        ->and($movement->position)->toBe(1);
+});
+
+it('throws a unique violation inside a transaction of the caller, without a retry', function () {
+    $task = Task::create(['title' => 'T']);
+    $attempts = 0;
+    Movement::saving(function () use (&$attempts) {
+        $attempts++;
+
+        throw new UniqueConstraintViolationException('testing', 'insert', [], new RuntimeException('unique'));
+    });
+
+    expect(fn () => DB::transaction(fn () => $task->pass('a')))->toThrow(UniqueConstraintViolationException::class)
+        ->and($attempts)->toBe(1);
+});
+
+it('names the event property superseded', function () {
+    $task = Task::create(['title' => 'T']);
+    $first = $task->pass('a');
+    Event::fake([Passed::class]);
+
+    $task->pass('b');
+
+    Event::assertDispatched(Passed::class, fn (Passed $event) => $event->superseded?->id === $first->id
+        && ! property_exists($event, 'previous'));
+});
+
+it('reads the level and the open children without a lock when passing', function () {
+    if (DB::getDriverName() === 'sqlite') {
+        $this->markTestSkipped('SQLite does not emit FOR UPDATE.');
+    }
+
+    $task = Task::create(['title' => 'T']);
+    $root = $task->pass('root');
+    $root->pass('child');
+    DB::enableQueryLog();
+
+    $root->pass('next');
+
+    $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'select'))->map(fn (string $sql) => str_replace(['"', '`'], '', $sql))->values();
+    $locking = $selects->filter(fn (string $sql) => str_contains($sql, 'for update'))->values();
+
+    expect($selects[0])->toContain('tasks')->toContain('for update')
+        ->and($selects[1])->toContain('where movements.id = ?')->toContain('for update')
+        ->and($selects[2])->toContain('level_key')->not->toContain('for update')
+        ->and($locking->filter(fn (string $sql) => str_contains($sql, 'level_key') || str_contains($sql, 'parent_id'))->all())->toBe([]);
 });

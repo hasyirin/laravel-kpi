@@ -93,12 +93,15 @@ it('locks a resource through the morph map and a custom key', function () {
 
     $task = AliasedTask::create(['title' => 'T']);
 
-    $movement = Movement::create([
+    $movement = (new Movement)->forceFill([
         'movable_type' => 'aliased',
         'movable_id' => $task->getKey(),
+        'position' => 1,
         'status' => 'open',
         'received_at' => now(),
-    ])->fresh();
+    ]);
+    $movement->save();
+    $movement = $movement->fresh();
 
     $queries = recordQueries();
 
