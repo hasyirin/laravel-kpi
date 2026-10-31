@@ -41,6 +41,18 @@ it('defaults minute to zero', function () {
         ->and($hour->minutes())->toBe(540);
 });
 
+it('rejects an hour outside 0 to 23', function (int $hour) {
+    expect(fn () => Hour::make($hour))->toThrow(InvalidArgumentException::class);
+})->with([-1, 24]);
+
+it('rejects a minute outside 0 to 59', function (int $minute) {
+    expect(fn () => Hour::make(8, $minute))->toThrow(InvalidArgumentException::class);
+})->with([-1, 60]);
+
+it('rejects 24:00', function () {
+    expect(fn () => Hour::parse('24:00'))->toThrow(InvalidArgumentException::class);
+});
+
 // --- WorkSchedule ---
 
 it('parses work schedule from array', function () {

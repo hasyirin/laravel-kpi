@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace Hasyirin\KPI\Data;
 
+use InvalidArgumentException;
+
 readonly class Hour
 {
     public function __construct(public int $hour, public int $minute = 0)
     {
-        assert($this->hour >= 0 && $this->hour < 24);
-        assert($this->minute >= 0 && $this->minute < 60);
+        if ($this->hour < 0 || $this->hour > 23) {
+            throw new InvalidArgumentException('An hour must be between 0 and 23.');
+        }
+
+        if ($this->minute < 0 || $this->minute > 59) {
+            throw new InvalidArgumentException('A minute must be between 0 and 59.');
+        }
     }
 
     public function minutes(): int
