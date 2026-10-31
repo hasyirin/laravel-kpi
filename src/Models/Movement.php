@@ -6,18 +6,15 @@ namespace Hasyirin\KPI\Models;
 
 use BackedEnum;
 use Carbon\CarbonInterface;
-use Carbon\CarbonInterval;
 use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Events\Completed;
 use Hasyirin\KPI\Events\Passed;
 use Hasyirin\KPI\Facades\KPI;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 use LogicException;
 
@@ -33,17 +30,14 @@ use LogicException;
  * @property string $actor_type
  * @property string $status
  * @property ?float $period
- * @property ?float $hours
+ * @property ?int $seconds
  * @property string $notes
  * @property bool $expects_children
  * @property CarbonInterface $received_at
  * @property ?CarbonInterface $completed_at
- * @property float $interval
  */
 class Movement extends Model
 {
-    use SoftDeletes;
-
     protected $fillable = [
         'parent_id',
         'previous_id',
@@ -55,7 +49,7 @@ class Movement extends Model
         'actor_type',
         'status',
         'period',
-        'hours',
+        'seconds',
         'notes',
         'properties',
         'expects_children',
@@ -71,7 +65,7 @@ class Movement extends Model
     {
         return [
             'period' => 'float',
-            'hours' => 'float',
+            'seconds' => 'integer',
             'properties' => 'array',
             'expects_children' => 'boolean',
             'received_at' => 'datetime',
@@ -103,19 +97,42 @@ class Movement extends Model
         return $this;
     }
 
-    protected function fillKPI(): void
+    public function kpi(?CarbonInterface $at = null): KPIData
     {
-        $kpi = filled($this->completed_at) ? $this->calculate() : null;
+        if ($this->isExcepted()) {
+            return KPIData::make();
+        }
 
-        $this->period = $kpi?->period;
-        $this->hours = $kpi?->hours();
+        if (filled($this->completed_at)) {
+            return KPIData::make($this->seconds ?? 0, $this->period ?? 0);
+        }
+
+        return KPI::calculate($this->received_at, $at ?? now());
     }
 
-    protected function calculate(): KPIData
+    public function isExcepted(): bool
     {
-        return ! in_array($this->status, config("kpi.status.$this->movable_type.except", []))
-            ? KPI::calculate($this->received_at, $this->completed_at)
-            : KPIData::make();
+        $excepted = collect(config("kpi.status.$this->movable_type.except", []))
+            ->map(fn (BackedEnum|string $status) => (string) ($status instanceof BackedEnum ? $status->value : $status));
+
+        return $excepted->contains((string) $this->status);
+    }
+
+    protected function fillKPI(): void
+    {
+        if (blank($this->completed_at)) {
+            $this->period = null;
+            $this->seconds = null;
+
+            return;
+        }
+
+        $kpi = $this->isExcepted()
+            ? KPIData::make()
+            : KPI::calculate($this->received_at, $this->completed_at);
+
+        $this->period = $kpi->period;
+        $this->seconds = $kpi->seconds;
     }
 
     /**
@@ -124,7 +141,7 @@ class Movement extends Model
     public function previous(): BelongsTo
     {
         /** @var class-string<self> $model */
-        $model = config('kpi.models.movement');
+        $model = config('kpi.models.movement', self::class);
 
         return $this->belongsTo($model);
     }
@@ -135,7 +152,7 @@ class Movement extends Model
     public function parent(): BelongsTo
     {
         /** @var class-string<self> $model */
-        $model = config('kpi.models.movement');
+        $model = config('kpi.models.movement', self::class);
 
         return $this->belongsTo($model, 'parent_id');
     }
@@ -146,7 +163,7 @@ class Movement extends Model
     public function children(): HasMany
     {
         /** @var class-string<self> $model */
-        $model = config('kpi.models.movement');
+        $model = config('kpi.models.movement', self::class);
 
         return $this->hasMany($model, 'parent_id');
     }
@@ -306,31 +323,6 @@ class Movement extends Model
     public function actor(): MorphTo
     {
         return $this->morphTo();
-    }
-
-    public function formattedPeriod(): Attribute
-    {
-        return Attribute::make(get: fn () => $this->period ?? $this->calculate()->period)->withoutObjectCaching();
-    }
-
-    public function interval(): Attribute
-    {
-        return Attribute::make(get: fn () => ($this->period > 0 || $this->period === null)
-            ? ($this->hours ?? $this->calculate()->hours()) * 60 * 60
-            : 0
-        )->withoutObjectCaching();
-    }
-
-    public function formattedInterval(): Attribute
-    {
-        return Attribute::make(
-            get: fn () => CarbonInterval::seconds((int) round($this->interval))->cascade()->forHumans(['parts' => 2]),
-        )->withoutObjectCaching();
-    }
-
-    public function formattedReceivedAt(): Attribute
-    {
-        return Attribute::make(get: fn () => $this->received_at->format(config('kpi.formats.datetime')));
     }
 
     public function scopeOpen(Builder $query): void

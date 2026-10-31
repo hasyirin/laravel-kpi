@@ -52,3 +52,88 @@ jobs:
 
       - name: Execute tests
         run: vendor/bin/pest --ci
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [postgresql-17, mysql-8.4, mariadb-11.8]
+        include:
+          - database: postgresql-17
+            connection: pgsql
+            image: postgres:17
+            port: 5432
+            username: postgres
+            password: secret
+            options: >-
+              --health-cmd "pg_isready -U postgres"
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 10
+            env:
+              POSTGRES_PASSWORD: secret
+              POSTGRES_DB: kpi
+          - database: mysql-8.4
+            connection: mysql
+            image: mysql:8.4
+            port: 3306
+            username: root
+            password: secret
+            options: >-
+              --health-cmd "mysqladmin ping -h 127.0.0.1 -psecret"
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 10
+            env:
+              MYSQL_ROOT_PASSWORD: secret
+              MYSQL_DATABASE: kpi
+          - database: mariadb-11.8
+            connection: mariadb
+            image: mariadb:11.8
+            port: 3306
+            username: root
+            password: secret
+            options: >-
+              --health-cmd "healthcheck.sh --connect --innodb_initialized"
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 10
+            env:
+              MARIADB_ROOT_PASSWORD: secret
+              MARIADB_DATABASE: kpi
+
+    name: ${{ matrix.database }} - P8.4 - ubuntu-latest
+
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env: ${{ matrix.env }}
+        ports:
+          - ${{ matrix.port }}:${{ matrix.port }}
+        options: ${{ matrix.options }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: mbstring, pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, intl, iconv, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Execute tests
+        run: vendor/bin/pest --ci
+        env:
+          DB_CONNECTION: ${{ matrix.connection }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: ${{ matrix.port }}
+          DB_DATABASE: kpi
+          DB_USERNAME: ${{ matrix.username }}
+          DB_PASSWORD: ${{ matrix.password }}

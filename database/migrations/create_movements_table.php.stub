@@ -1,19 +1,17 @@
 <?php
 
-use Hasyirin\KPI\Models\Movement;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     protected string $table;
-    protected string $model;
 
     public function __construct()
     {
-        $this->table = config('kpi.tables.movements');
-        $this->model = config('kpi.models.movement');
+        $this->table = config('kpi.tables.movements', 'movements');
     }
 
     public function up(): void
@@ -21,11 +19,15 @@ return new class extends Migration
         Schema::create($this->table, function (Blueprint $table) {
             $table->id();
 
-            $table->foreignIdFor($this->model, 'previous_id')
-                ->index()
+            $table->foreignId('parent_id')
                 ->nullable()
                 ->constrained($this->table)
                 ->cascadeOnDelete();
+
+            $table->foreignId('previous_id')
+                ->nullable()
+                ->constrained($this->table)
+                ->nullOnDelete();
 
             $table->morphs('movable');
 
@@ -34,18 +36,27 @@ return new class extends Migration
 
             $table->string('status');
 
-            $table->decimal('period', places: 4)->unsigned()->nullable();
-            $table->decimal('hours', places: 4)->unsigned()->nullable();
+            $table->unsignedBigInteger('seconds')->nullable();
+            $table->decimal('period', 10, 4)->nullable();
 
             $table->text('notes')->nullable();
             $table->json('properties');
+            $table->boolean('expects_children')->default(false);
 
-            $table->timestamp('received_at')->nullable();
-            $table->timestamp('completed_at')->nullable();
+            $table->dateTime('received_at');
+            $table->dateTime('completed_at')->nullable();
 
             $table->timestamps();
-            $table->softDeletes();
+
+            $table->index('parent_id');
         });
+
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            $wrapped = Schema::getConnection()->getQueryGrammar()->wrapTable($this->table);
+
+            DB::statement("ALTER TABLE {$wrapped} ADD CONSTRAINT {$this->table}_completed_after_received CHECK (completed_at IS NULL OR completed_at >= received_at)");
+            DB::statement("ALTER TABLE {$wrapped} ADD CONSTRAINT {$this->table}_seconds_when_completed CHECK (completed_at IS NOT NULL OR seconds IS NULL)");
+        }
     }
 
     public function down(): void

@@ -8,10 +8,6 @@ use Hasyirin\KPI\Models\RecurringHoliday;
 return [
     'timezone' => null,
 
-    'formats' => [
-        'datetime' => 'd/m/Y h:i A',
-    ],
-
     'tables' => [
         'movements' => 'movements',
         'holidays' => 'holidays',

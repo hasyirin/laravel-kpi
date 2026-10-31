@@ -1,6 +1,5 @@
 <?php
 
-use Carbon\CarbonImmutable;
 use Hasyirin\KPI\Events\Completed;
 use Hasyirin\KPI\Events\Passed;
 use Hasyirin\KPI\Models\Holiday;
@@ -11,6 +10,7 @@ use Hasyirin\KPI\Tests\TestSupport\Enums\TaskStatus;
 use Hasyirin\KPI\Tests\TestSupport\Models\CustomMovement;
 use Hasyirin\KPI\Tests\TestSupport\Models\StringKeyTask;
 use Hasyirin\KPI\Tests\TestSupport\Models\Task;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -189,7 +189,7 @@ it('creates movement when there is no current movement', function () {
 
 // --- Movement model ---
 
-it('calculates period and hours when completed_at is set', function () {
+it('calculates period and seconds when completed_at is set', function () {
     // Wed Jan 1, 8:00 to 9:00 = 1 hour, period 0.1111
     Carbon::setTestNow('2025-01-01 08:00:00');
     $task = Task::create(['title' => 'Test']);
@@ -202,12 +202,12 @@ it('calculates period and hours when completed_at is set', function () {
     $completed = Movement::where('status', 'open')->first();
 
     expect($completed->period)->toBe(0.1111)
-        ->and($completed->hours)->toBe(1.0);
+        ->and($completed->seconds)->toBe(3600);
 
     Carbon::setTestNow();
 });
 
-it('sets period and hours to null when completed_at is empty', function () {
+it('sets period and seconds to null when completed_at is empty', function () {
     $movement = new Movement([
         'movable_id' => 1,
         'movable_type' => Task::class,
@@ -219,38 +219,7 @@ it('sets period and hours to null when completed_at is empty', function () {
     $movement->save();
 
     expect($movement->period)->toBeNull()
-        ->and($movement->hours)->toBeNull();
-});
-
-it('computes interval attribute in seconds from hours', function () {
-    $movement = new Movement([
-        'movable_id' => 1,
-        'movable_type' => Task::class,
-        'status' => 'open',
-        'received_at' => Carbon::parse('2025-01-01 08:00'),
-        'completed_at' => Carbon::parse('2025-01-01 10:00'),
-        'properties' => [],
-    ]);
-
-    $movement->save();
-
-    // 2 hours = 7200 seconds
-    expect($movement->interval)->toBe(7200.0);
-});
-
-it('provides formatted period for incomplete movements', function () {
-    $movement = new Movement([
-        'movable_id' => 1,
-        'movable_type' => Task::class,
-        'status' => 'open',
-        'received_at' => Carbon::parse('2025-01-01 08:00'),
-        'properties' => [],
-    ]);
-
-    $movement->save();
-
-    // formattedPeriod falls back to calculate() when period is null
-    expect($movement->formattedPeriod)->toBeNumeric();
+        ->and($movement->seconds)->toBeNull();
 });
 
 // --- Relationships ---
@@ -431,7 +400,7 @@ it('complete() sets completed_at on a leaf movement', function () {
 
 it('complete() accepts a custom timestamp', function () {
     $task = Task::create(['title' => 'Test']);
-    $m = $task->pass('open');
+    $m = $task->pass('open', receivedAt: Carbon::parse('2025-03-15 08:00'));
 
     $at = Carbon::parse('2025-03-15 14:00');
     $m->complete($at);
@@ -441,7 +410,7 @@ it('complete() accepts a custom timestamp', function () {
 
 it('complete() is a no-op when already completed', function () {
     $task = Task::create(['title' => 'Test']);
-    $m = $task->pass('open');
+    $m = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
 
     $m->complete(Carbon::parse('2025-01-01 10:00'));
     $first = $m->fresh()->completed_at;
@@ -453,14 +422,14 @@ it('complete() is a no-op when already completed', function () {
 
 it('complete() cascades through open descendants with same timestamp', function () {
     $task = Task::create(['title' => 'Test']);
-    $root = $task->pass('open');
+    $root = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
 
     $child = new Movement([
         'parent_id' => $root->id,
         'movable_id' => $task->id,
         'movable_type' => Task::class,
         'status' => 'sub',
-        'received_at' => now(),
+        'received_at' => Carbon::parse('2025-01-01 08:00'),
         'properties' => [],
     ]);
     $child->save();
@@ -470,7 +439,7 @@ it('complete() cascades through open descendants with same timestamp', function 
         'movable_id' => $task->id,
         'movable_type' => Task::class,
         'status' => 'subsub',
-        'received_at' => now(),
+        'received_at' => Carbon::parse('2025-01-01 08:00'),
         'properties' => [],
     ]);
     $grandchild->save();
@@ -786,7 +755,7 @@ it('keeps the stored KPI of a completed movement when an unrelated attribute cha
 
     $movement->update(['notes' => 'reviewed']);
 
-    expect($movement->fresh()->hours)->toBe(27.0)
+    expect($movement->fresh()->seconds)->toBe(97200)
         ->and($movement->fresh()->period)->toBe(3.0);
 });
 
@@ -798,7 +767,7 @@ it('recalculates the stored KPI of a completed movement on demand', function () 
 
     $movement->recalculate();
 
-    expect($movement->fresh()->hours)->toBe(18.0)
+    expect($movement->fresh()->seconds)->toBe(64800)
         ->and($movement->fresh()->period)->toBe(2.0);
 });
 
@@ -809,7 +778,7 @@ it('recalculates a completed movement when its received_at changes', function ()
 
     $movement->update(['received_at' => Carbon::parse('2024-01-02 08:00')]);
 
-    expect($movement->fresh()->hours)->toBe(18.0);
+    expect($movement->fresh()->seconds)->toBe(64800);
 });
 
 // --- Stale instances and lock order ---
@@ -824,7 +793,7 @@ it('does not complete a movement again through a stale instance', function () {
 
     expect($a->completed_at->toDateTimeString())->toBe('2024-01-01 11:00:00')
         ->and($a->fresh()->completed_at->toDateTimeString())->toBe('2024-01-01 11:00:00')
-        ->and($a->fresh()->hours)->toBe(3.0);
+        ->and($a->fresh()->seconds)->toBe(10800);
     Event::assertDispatchedTimes(Completed::class, 1);
 });
 
@@ -845,10 +814,10 @@ it('locks a movement before its children when completing it', function () {
 
     DB::enableQueryLog();
     $root->complete();
-    $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'select'))->values();
+    $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'select'))->map(fn (string $sql) => str_replace(['"', '`'], '', $sql))->values();
 
-    expect($selects[0])->toContain('where "movements"."id" = ?')
-        ->and($selects[1])->toContain('where "movements"."parent_id" = ?');
+    expect($selects[0])->toContain('where movements.id = ?')
+        ->and($selects[1])->toContain('where movements.parent_id = ?');
 });
 
 it('locks a movement before its children when passing from it', function () {
@@ -858,10 +827,10 @@ it('locks a movement before its children when passing from it', function () {
 
     DB::enableQueryLog();
     $root->pass('next');
-    $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'select'))->values();
+    $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'select'))->map(fn (string $sql) => str_replace(['"', '`'], '', $sql))->values();
 
-    expect($selects[0])->toContain('where "movements"."id" = ?')
-        ->and($selects[1])->toContain('where "movements"."parent_id" = ?');
+    expect($selects[0])->toContain('where movements.id = ?')
+        ->and($selects[1])->toContain('where movements.parent_id = ?');
 });
 
 // --- Same-second movements ---
@@ -1048,53 +1017,29 @@ it('Movement::passIfNotCurrent() matches an actor whose key type differs from th
     expect($root->passIfNotCurrent('review', actor: $actor))->toBeFalse();
 });
 
-// --- Formatted attributes ---
+// --- Deletes ---
 
-it('formats the full interval while the clock moves', function () {
-    $task = Task::create(['title' => 'Test']);
-    $movement = $task->pass('open', receivedAt: Carbon::parse('2024-01-01 09:00'));
-    $movement->complete(Carbon::parse('2024-01-01 11:15'));
-    $clock = CarbonImmutable::parse('2024-06-01 00:00:00');
-    Carbon::setTestNow(function () use (&$clock) {
-        return $clock = $clock->addSecond();
-    });
-
-    expect($movement->formatted_interval)->toBe('2 hours 15 minutes');
-
-    Carbon::setTestNow();
-});
-
-it('formats an interval whose stored hours were truncated', function () {
-    $task = Task::create(['title' => 'Test']);
-    $movement = $task->pass('open', receivedAt: Carbon::parse('2024-01-01 09:00'));
-    $movement->complete(Carbon::parse('2024-01-01 09:10'));  // hours 0.1666
-
-    expect($movement->formatted_interval)->toBe('10 minutes');
-});
-
-// --- Hard deletes ---
-
-it('keeps later movements and other tracks when a movement is force-deleted', function () {
+it('keeps later movements and other tracks when a movement is deleted', function () {
     $task = Task::create(['title' => 'Test']);
     $payment = $task->pass('payment');
     $fulfillment = $task->pass('fulfillment', supersede: false);
     $packing = $fulfillment->pass('packing');
 
-    $payment->forceDelete();
+    $payment->delete();
 
     expect($fulfillment->fresh())->not->toBeNull()
         ->and($fulfillment->fresh()->previous_id)->toBeNull()
         ->and($packing->fresh())->not->toBeNull();
 });
 
-it('deletes the children of a force-deleted movement', function () {
+it('deletes the children of a deleted movement', function () {
     $task = Task::create(['title' => 'Test']);
     $root = $task->pass('root');
     $child = $root->pass('child');
 
-    $root->forceDelete();
+    $root->delete();
 
-    expect(Movement::withTrashed()->find($child->id))->toBeNull();
+    expect(Movement::find($child->id))->toBeNull();
 });
 
 // --- Multi-root supersede footgun ---
@@ -1115,4 +1060,85 @@ it('Model::pass() with default supersede on multiple open roots closes only the 
         ->and($third->previous_id)->toBe($second->id);
 
     Carbon::setTestNow();
+});
+
+// --- Stored values and kpi() ---
+
+it('keeps stored values when an unrelated column is saved', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $movement->complete(Carbon::parse('2025-01-01 09:00'));
+    Holiday::create(['name' => 'H', 'date' => '2025-01-01']);
+
+    $movement->update(['notes' => 'changed']);
+
+    expect($movement->fresh()->seconds)->toBe(3600);
+});
+
+it('recalculates on request', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $movement->complete(Carbon::parse('2025-01-01 09:00'));
+    Holiday::create(['name' => 'H', 'date' => '2025-01-01']);
+
+    expect($movement->recalculate()->seconds)->toBe(0)
+        ->and($movement->fresh()->seconds)->toBe(0);
+});
+
+it('returns stored values with empty metadata for a closed movement and ignores at', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $movement->complete(Carbon::parse('2025-01-01 09:00'));
+
+    expect($movement->kpi(now()->addYear())->seconds)->toBe(3600)
+        ->and($movement->kpi()->period)->toBe(0.1111)
+        ->and($movement->kpi()->metadata->scheduledDays)->toBe(0);
+});
+
+it('returns a live calculation for an open movement', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+
+    expect($movement->kpi(Carbon::parse('2025-01-01 09:00'))->seconds)->toBe(3600)
+        ->and($movement->kpi(Carbon::parse('2025-01-01 09:00'))->metadata->scheduledDays)->toBe(1);
+});
+
+it('returns zero for an except status, open or closed', function () {
+    $task = Task::create(['title' => 'T']);
+    config()->set('kpi.status.'.$task->getMorphClass().'.except', [TaskStage::OnHold, 'paused']);
+
+    $open = $task->pass('paused', receivedAt: Carbon::parse('2025-01-01 08:00'), supersede: false);
+    $closed = $task->pass(TaskStage::OnHold, receivedAt: Carbon::parse('2025-01-01 08:00'), supersede: false);
+    $closed->complete(Carbon::parse('2025-01-01 09:00'));
+    $normal = $task->pass('normal', receivedAt: Carbon::parse('2025-01-01 08:00'), supersede: false);
+    $normal->complete(Carbon::parse('2025-01-01 09:00'));
+
+    expect($open->kpi(Carbon::parse('2025-01-01 09:00'))->seconds)->toBe(0)
+        ->and($closed->fresh()->seconds)->toBe(0)
+        ->and($closed->fresh()->kpi()->seconds)->toBe(0)
+        ->and($normal->fresh()->seconds)->toBe(3600);
+});
+
+it('reads a missing status config as no excepted statuses', function () {
+    config()->set('kpi.status', null);
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+
+    expect($movement->isExcepted())->toBeFalse();
+});
+
+it('rejects a backwards close and seconds on an open row', function () {
+    if (DB::getDriverName() === 'sqlite') {
+        $this->markTestSkipped('The stub does not add CHECK constraints on SQLite.');
+    }
+
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $movement->complete(Carbon::parse('2025-01-01 09:00'));
+    $open = $task->pass('again', receivedAt: Carbon::parse('2025-01-02 08:00'));
+
+    expect(fn () => DB::table('movements')->where('id', $movement->id)->update(['completed_at' => '2000-01-01 00:00:00']))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('movements')->where('id', $open->id)->update(['seconds' => 5]))
+        ->toThrow(QueryException::class);
 });

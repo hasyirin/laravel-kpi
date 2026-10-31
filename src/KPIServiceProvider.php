@@ -15,10 +15,7 @@ class KPIServiceProvider extends PackageServiceProvider
             ->hasMigrations([
                 'create_movements_table',
                 'create_holidays_table',
-                'add_parent_child_to_movements_table',
-                'add_observes_substitute_to_holidays_table',
                 'create_recurring_holidays_table',
-                'alter_previous_id_hours_and_received_at_on_movements_table',
             ]);
     }
 }
