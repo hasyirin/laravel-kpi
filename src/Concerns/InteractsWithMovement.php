@@ -63,11 +63,7 @@ trait InteractsWithMovement
             $superseded = null;
 
             if ($previous && $this->shouldSupersedeRoot($previous, $supersede)) {
-                $previous->actor_id ??= isset($sender) ? null : $actor?->getKey();
-                $previous->actor_type ??= isset($sender) ? null : $actor?->getMorphClass();
-
-                // complete() saves with both the actor changes and completed_at in one query
-                $previous->complete($receivedAt);
+                $previous->closeLocked($receivedAt, $sender ? null : $actor);
                 $superseded = $previous;
             }
 

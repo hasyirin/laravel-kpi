@@ -10,6 +10,7 @@ use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Events\Completed;
 use Hasyirin\KPI\Events\Passed;
 use Hasyirin\KPI\Facades\KPI;
+use Hasyirin\KPI\Support\ResourceLock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -26,8 +27,8 @@ use LogicException;
  * @property string $movable_type
  * @property int $sender_id
  * @property string $sender_type
- * @property int $actor_id
- * @property string $actor_type
+ * @property ?int $actor_id
+ * @property ?string $actor_type
  * @property string $status
  * @property ?float $period
  * @property ?int $seconds
@@ -170,30 +171,46 @@ class Movement extends Model
 
     public function complete(?CarbonInterface $at = null): self
     {
-        if (filled($this->completed_at)) {
-            return $this;
+        ResourceLock::forMovement($this)->run($this->getConnection(), function () use ($at) {
+            $this->closeLocked(($at ?? now())->copy()->setTimezone(config('app.timezone')));
+        });
+
+        return $this;
+    }
+
+    /**
+     * @internal
+     */
+    public function closeLocked(CarbonInterface $at, ?Model $backfillActor = null): bool
+    {
+        $row = $this->newQueryWithoutScopes()->whereKey($this->getKey())->lockForUpdate()->toBase()->first();
+
+        if ($row === null) {
+            throw new LogicException("Cannot close missing movement {$this->getKey()}.");
         }
 
-        $at ??= now();
+        $this->setRawAttributes((array) $row, true);
 
-        return $this->getConnection()->transaction(function () use ($at) {
-            if ($this->lockAndCheckCompleted()) {
-                return $this->refresh();
-            }
+        if (filled($this->completed_at)) {
+            return false;
+        }
 
-            $this->children()
-                ->whereNull('completed_at')
-                ->lockForUpdate()
-                ->get()
-                ->each(fn (self $child) => $child->complete($at));
+        $this->children()
+            ->whereNull('completed_at')
+            ->get()
+            ->each(fn (self $child) => $child->closeLocked($at));
 
-            $this->completed_at = $at;
-            $this->save();
+        if ($backfillActor !== null && $this->actor_id === null) {
+            $this->actor_id = $backfillActor->getKey();
+            $this->actor_type = $backfillActor->getMorphClass();
+        }
 
-            event(new Completed($this));
+        $this->completed_at = $at->max($this->received_at);
+        $this->save();
 
-            return $this;
-        });
+        event(new Completed($this));
+
+        return true;
     }
 
     public function pass(
@@ -225,11 +242,7 @@ class Movement extends Model
             $superseded = null;
 
             if ($previous && $this->shouldSupersede($previous, $supersede)) {
-                $previous->actor_id ??= isset($sender) ? null : $actor?->getKey();
-                $previous->actor_type ??= isset($sender) ? null : $actor?->getMorphClass();
-
-                // complete() saves with both the actor changes and completed_at in one query
-                $previous->complete($receivedAt);
+                $previous->closeLocked($receivedAt, $sender ? null : $actor);
                 $superseded = $previous;
             }
 

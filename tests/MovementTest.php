@@ -12,6 +12,7 @@ use Hasyirin\KPI\Tests\TestSupport\Models\StringKeyTask;
 use Hasyirin\KPI\Tests\TestSupport\Models\Task;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -208,15 +209,8 @@ it('calculates period and seconds when completed_at is set', function () {
 });
 
 it('sets period and seconds to null when completed_at is empty', function () {
-    $movement = new Movement([
-        'movable_id' => 1,
-        'movable_type' => Task::class,
-        'status' => 'open',
-        'received_at' => Carbon::parse('2025-01-01 08:00'),
-        'properties' => [],
-    ]);
-
-    $movement->save();
+    $task = Task::create(['title' => 'Test']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
 
     expect($movement->period)->toBeNull()
         ->and($movement->seconds)->toBeNull();
@@ -816,8 +810,9 @@ it('locks a movement before its children when completing it', function () {
     $root->complete();
     $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'select'))->map(fn (string $sql) => str_replace(['"', '`'], '', $sql))->values();
 
-    expect($selects[0])->toContain('where movements.id = ?')
-        ->and($selects[1])->toContain('where movements.parent_id = ?');
+    expect($selects[0])->toContain('from tasks where id = ?')
+        ->and($selects[1])->toContain('where movements.id = ?')
+        ->and($selects[2])->toContain('where movements.parent_id = ?');
 });
 
 it('locks a movement before its children when passing from it', function () {
@@ -1141,4 +1136,216 @@ it('rejects a backwards close and seconds on an open row', function () {
         ->toThrow(QueryException::class)
         ->and(fn () => DB::table('movements')->where('id', $open->id)->update(['seconds' => 5]))
         ->toThrow(QueryException::class);
+});
+
+// --- complete() through the resource lock ---
+
+it('closes descendants deepest first at the requested time', function () {
+    $task = Task::create(['title' => 'T']);
+    $root = $task->pass('root', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $child = $root->pass('child', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $grandchild = $child->pass('grandchild', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $order = [];
+    Event::listen(Completed::class, function (Completed $event) use (&$order) {
+        $order[] = $event->movement->id;
+    });
+
+    $root->complete(Carbon::parse('2025-01-01 12:00'));
+
+    expect($order)->toBe([$grandchild->id, $child->id, $root->id])
+        ->and($grandchild->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 12:00:00')
+        ->and($child->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 12:00:00')
+        ->and($root->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 12:00:00');
+});
+
+it('never stores completed_at before received_at', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 10:00'));
+
+    $movement->complete(Carbon::parse('2025-01-01 09:00'));
+
+    expect($movement->fresh()->completed_at->equalTo(Carbon::parse('2025-01-01 10:00')))->toBeTrue()
+        ->and($movement->fresh()->seconds)->toBe(0);
+});
+
+it('stores zero time on a descendant that started after the close time', function () {
+    $task = Task::create(['title' => 'T']);
+    $root = $task->pass('root', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $child = $root->pass('child', receivedAt: Carbon::parse('2025-01-01 11:00'));
+
+    $root->complete(Carbon::parse('2025-01-01 10:00'));
+
+    expect($root->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 10:00:00')
+        ->and($child->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 11:00:00')
+        ->and($child->fresh()->seconds)->toBe(0);
+});
+
+it('converts a given time to the app time zone', function () {
+    config()->set('app.timezone', 'UTC');
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $at = Carbon::parse('2025-01-01 17:00', 'Asia/Kuala_Lumpur');
+
+    $movement->complete($at);
+
+    expect(DB::table('movements')->value('completed_at'))->toStartWith('2025-01-01 09:00:00')
+        ->and($at->timezoneName)->toBe('Asia/Kuala_Lumpur');
+});
+
+it('takes a new default time on each attempt', function () {
+    Carbon::setTestNow('2025-01-01 09:00:00');
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open');
+    Carbon::setTestNow('2025-01-01 10:00:00');
+    $attempts = 0;
+    Movement::saving(function () use (&$attempts) {
+        if (++$attempts === 1) {
+            Carbon::setTestNow('2025-01-01 11:00:00');
+
+            throw new UniqueConstraintViolationException('testing', 'insert', [], new RuntimeException('unique'));
+        }
+    });
+
+    $movement->complete();
+
+    expect($movement->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 11:00:00');
+
+    Carbon::setTestNow();
+});
+
+it('returns without an event when the row is already closed, even from a stale instance', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $stale = Movement::find($movement->id);
+    $movement->complete();
+    Event::fake([Completed::class]);
+
+    $result = $stale->complete();
+
+    expect($result)->toBe($stale)
+        ->and($stale->completed_at)->not->toBeNull();
+    Event::assertNotDispatched(Completed::class);
+});
+
+it('throws on a hard-deleted movement', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open');
+    $stale = Movement::find($movement->id);
+    DB::table('movements')->where('id', $movement->id)->delete();
+
+    expect(fn () => $stale->complete())->toThrow(LogicException::class);
+});
+
+it('throws when the resource row is gone', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open');
+    DB::table('tasks')->delete();
+
+    expect(fn () => $movement->complete())->toThrow(LogicException::class)
+        ->and($movement->fresh()->completed_at)->toBeNull();
+});
+
+it('dispatches Completed once after a retried attempt', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $attempts = 0;
+    Movement::saving(function () use (&$attempts) {
+        if (++$attempts === 1) {
+            throw new UniqueConstraintViolationException('testing', 'insert', [], new RuntimeException('unique'));
+        }
+    });
+    $completed = 0;
+    Event::listen(Completed::class, function () use (&$completed) {
+        $completed++;
+    });
+
+    $movement->complete(Carbon::parse('2025-01-01 09:00'));
+
+    expect($attempts)->toBe(2)
+        ->and($completed)->toBe(1)
+        ->and($movement->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 09:00:00');
+});
+
+it('takes the instance state from the row after a failed attempt', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+
+    expect(fn () => DB::transaction(function () use ($movement) {
+        $movement->complete(Carbon::parse('2025-01-01 09:00'));
+
+        DB::table('missing_table')->get();
+    }))->toThrow(QueryException::class);
+
+    expect($movement->fresh()->completed_at)->toBeNull();
+
+    $movement->complete(Carbon::parse('2025-01-01 10:00'));
+
+    expect($movement->completed_at->toDateTimeString())->toBe('2025-01-01 10:00:00')
+        ->and($movement->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 10:00:00')
+        ->and($movement->fresh()->seconds)->toBe(7200);
+});
+
+it('discards unsaved attribute changes when it reads the row', function () {
+    $task = Task::create(['title' => 'T']);
+    $movement = $task->pass('open', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $movement->notes = 'unsaved';
+
+    $movement->complete(Carbon::parse('2025-01-01 09:00'));
+
+    expect($movement->notes)->toBeNull()
+        ->and($movement->fresh()->notes)->toBeNull();
+});
+
+it('back-fills the given actor only when the row has none', function () {
+    $task = Task::create(['title' => 'T']);
+    $actor = Task::create(['title' => 'Actor']);
+    $existing = Task::create(['title' => 'Existing']);
+    $without = $task->pass('without', supersede: false);
+    $with = $task->pass('with', actor: $existing, supersede: false);
+
+    DB::transaction(function () use ($without, $with, $actor) {
+        $without->closeLocked(now(), $actor);
+        $with->closeLocked(now(), $actor);
+    });
+
+    expect($without->fresh()->actor_id)->toBe($actor->id)
+        ->and($without->fresh()->actor_type)->toBe(Task::class)
+        ->and($with->fresh()->actor_id)->toBe($existing->id);
+});
+
+it('does not back-fill descendants or an already closed row', function () {
+    $task = Task::create(['title' => 'T']);
+    $actor = Task::create(['title' => 'Actor']);
+    $root = $task->pass('root', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $child = $root->pass('child', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $closed = $task->pass('closed', receivedAt: Carbon::parse('2025-01-01 08:00'), supersede: false);
+    $closed->complete(Carbon::parse('2025-01-01 09:00'));
+
+    $closedResult = $closed->closeLocked(now(), $actor);
+    $rootResult = $root->closeLocked(now(), $actor);
+
+    expect($closedResult)->toBeFalse()
+        ->and($rootResult)->toBeTrue()
+        ->and($closed->fresh()->actor_id)->toBeNull()
+        ->and($child->fresh()->actor_id)->toBeNull()
+        ->and($root->fresh()->actor_id)->toBe($actor->id);
+});
+
+it('reads open children without a lock when completing', function () {
+    if (DB::getDriverName() === 'sqlite') {
+        $this->markTestSkipped('SQLite does not emit FOR UPDATE.');
+    }
+
+    $task = Task::create(['title' => 'T']);
+    $root = $task->pass('root');
+    $root->pass('child');
+    DB::enableQueryLog();
+
+    $root->complete();
+
+    $selects = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'select'))->map(fn (string $sql) => str_replace(['"', '`'], '', $sql))->values();
+
+    expect($selects[0])->toContain('tasks')->toContain('for update')
+        ->and($selects[1])->toContain('where movements.id = ?')->toContain('for update')
+        ->and($selects[2])->toContain('where movements.parent_id = ?')->not->toContain('for update');
 });
