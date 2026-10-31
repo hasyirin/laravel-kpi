@@ -10,7 +10,7 @@ return new class extends Migration
 
     public function __construct()
     {
-        $this->table = config('kpi.tables.recurring_holidays');
+        $this->table = config('kpi.tables.recurring_holidays', 'recurring_holidays');
     }
 
     public function up(): void

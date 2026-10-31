@@ -6,6 +6,7 @@ namespace Hasyirin\KPI\Models;
 
 use BackedEnum;
 use Carbon\CarbonInterface;
+use Carbon\CarbonInterval;
 use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Events\Completed;
 use Hasyirin\KPI\Events\Passed;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * @property int $id
@@ -78,22 +79,36 @@ class Movement extends Model
         ];
     }
 
+    public function getTable(): string
+    {
+        return $this->table ?? config('kpi.tables.movements', parent::getTable());
+    }
+
     protected static function boot(): void
     {
         parent::boot();
 
         static::saving(function (self $movement) {
-            if (! filled($movement->completed_at)) {
-                $movement->period = null;
-                $movement->hours = null;
-
-                return;
+            if ($movement->isDirty(['received_at', 'completed_at', 'status'])) {
+                $movement->fillKPI();
             }
-
-            $kpi = $movement->calculate();
-            $movement->period = $kpi->period;
-            $movement->hours = $kpi->hours;
         });
+    }
+
+    public function recalculate(): self
+    {
+        $this->fillKPI();
+        $this->save();
+
+        return $this;
+    }
+
+    protected function fillKPI(): void
+    {
+        $kpi = filled($this->completed_at) ? $this->calculate() : null;
+
+        $this->period = $kpi?->period;
+        $this->hours = $kpi?->hours;
     }
 
     protected function calculate(): KPIData
@@ -108,7 +123,10 @@ class Movement extends Model
      */
     public function previous(): BelongsTo
     {
-        return $this->belongsTo(self::class);
+        /** @var class-string<self> $model */
+        $model = config('kpi.models.movement');
+
+        return $this->belongsTo($model);
     }
 
     /**
@@ -116,7 +134,10 @@ class Movement extends Model
      */
     public function parent(): BelongsTo
     {
-        return $this->belongsTo(self::class, 'parent_id');
+        /** @var class-string<self> $model */
+        $model = config('kpi.models.movement');
+
+        return $this->belongsTo($model, 'parent_id');
     }
 
     /**
@@ -124,7 +145,10 @@ class Movement extends Model
      */
     public function children(): HasMany
     {
-        return $this->hasMany(self::class, 'parent_id');
+        /** @var class-string<self> $model */
+        $model = config('kpi.models.movement');
+
+        return $this->hasMany($model, 'parent_id');
     }
 
     public function complete(?CarbonInterface $at = null): self
@@ -135,7 +159,11 @@ class Movement extends Model
 
         $at ??= now();
 
-        return DB::transaction(function () use ($at) {
+        return $this->getConnection()->transaction(function () use ($at) {
+            if ($this->lockAndCheckCompleted()) {
+                return $this->refresh();
+            }
+
             $this->children()
                 ->whereNull('completed_at')
                 ->lockForUpdate()
@@ -163,13 +191,18 @@ class Movement extends Model
     ): self {
         $receivedAt ??= now();
 
-        return DB::transaction(function () use (
+        return $this->getConnection()->transaction(function () use (
             $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren
         ) {
+            if ($this->lockAndCheckCompleted()) {
+                throw new LogicException('Cannot pass from a completed movement.');
+            }
+
             $previous = $this->children()
                 ->whereNull('completed_at')
                 ->lockForUpdate()
                 ->latest('received_at')
+                ->latest('id')
                 ->first();
 
             $superseded = null;
@@ -183,8 +216,7 @@ class Movement extends Model
                 $superseded = $previous;
             }
 
-            $movement = new (config('kpi.models.movement'))([
-                'parent_id' => $this->getKey(),
+            $movement = $this->children()->make([
                 'previous_id' => $previous?->getKey(),
                 'sender_id' => $sender?->getKey(),
                 'sender_type' => $sender?->getMorphClass(),
@@ -226,6 +258,13 @@ class Movement extends Model
         return $previous->children()->whereNull('completed_at')->doesntExist();
     }
 
+    protected function lockAndCheckCompleted(): bool
+    {
+        return filled(
+            $this->newQueryWithoutScopes()->whereKey($this->getKey())->lockForUpdate()->value('completed_at')
+        );
+    }
+
     public function passIfNotCurrent(
         BackedEnum|string $status,
         ?Model $sender = null,
@@ -239,12 +278,13 @@ class Movement extends Model
         $latest = $this->children()
             ->whereNull('completed_at')
             ->latest('received_at')
+            ->latest('id')
             ->first();
 
         $statusValue = $status instanceof BackedEnum ? $status->value : $status;
-        $sameStatus = $latest?->status === $statusValue;
+        $sameStatus = $latest?->status === (string) $statusValue;
         $sameActor = $latest?->actor_type === $actor?->getMorphClass()
-            && $latest?->actor_id === $actor?->getKey();
+            && (string) $latest?->actor_id === (string) $actor?->getKey();
 
         if ($sameStatus && $sameActor) {
             return false;
@@ -284,10 +324,7 @@ class Movement extends Model
     public function formattedInterval(): Attribute
     {
         return Attribute::make(
-            get: fn () => now()->addSeconds($this->interval)->diffForHumans([
-                'syntax' => CarbonInterface::DIFF_ABSOLUTE,
-                'parts' => 2,
-            ]),
+            get: fn () => CarbonInterval::seconds((int) round($this->interval))->cascade()->forHumans(['parts' => 2]),
         )->withoutObjectCaching();
     }
 

@@ -19,12 +19,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table($this->table, function (Blueprint $table) {
-            $table->foreignIdFor($this->model, 'parent_id')
-                ->after('id')
-                ->index()
-                ->nullable()
-                ->constrained((new $this->model)->getTable())
-                ->cascadeOnDelete();
+            // The v1.0.0 create_movements_table stub already created parent_id.
+            if (! Schema::hasColumn($this->table, 'parent_id')) {
+                $table->foreignIdFor($this->model, 'parent_id')
+                    ->after('id')
+                    ->index()
+                    ->nullable()
+                    ->constrained($this->table)
+                    ->cascadeOnDelete();
+            }
 
             $table->boolean('expects_children')
                 ->after('properties')
@@ -35,8 +38,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table($this->table, function (Blueprint $table) {
-            $table->dropConstrainedForeignId('parent_id');
-            $table->dropColumn('expects_children');
+            $table->dropForeign(['parent_id']);
+            $table->dropIndex(['parent_id']);
+            $table->dropColumn(['parent_id', 'expects_children']);
         });
     }
 };

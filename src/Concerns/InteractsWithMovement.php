@@ -11,7 +11,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * @mixin Model
@@ -50,7 +49,7 @@ trait InteractsWithMovement
     ): Movement {
         $receivedAt ??= now();
 
-        return DB::transaction(function () use (
+        return $this->movements()->getRelated()->getConnection()->transaction(function () use (
             $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren
         ) {
             $previous = $this->movements()
@@ -58,6 +57,7 @@ trait InteractsWithMovement
                 ->whereNull('completed_at')
                 ->lockForUpdate()
                 ->latest('received_at')
+                ->latest('id')
                 ->first();
 
             $superseded = null;
@@ -71,7 +71,7 @@ trait InteractsWithMovement
                 $superseded = $previous;
             }
 
-            $movement = new (config('kpi.models.movement'))([
+            $movement = $this->movements()->make([
                 'previous_id' => $previous?->getKey(),
                 'sender_id' => $sender?->getKey(),
                 'sender_type' => $sender?->getMorphClass(),
@@ -87,9 +87,9 @@ trait InteractsWithMovement
             $movement->movable()->associate($this);
             $movement->save();
 
-            event(new Passed($movement, $superseded));
-
             $this->load('movement');
+
+            event(new Passed($movement, $superseded));
 
             return $movement;
         });
@@ -109,12 +109,13 @@ trait InteractsWithMovement
             ->whereNull('parent_id')
             ->whereNull('completed_at')
             ->latest('received_at')
+            ->latest('id')
             ->first();
 
         $statusValue = $status instanceof BackedEnum ? $status->value : $status;
-        $sameStatus = $latestRoot?->status === $statusValue;
+        $sameStatus = $latestRoot?->status === (string) $statusValue;
         $sameActor = $latestRoot?->actor_type === $actor?->getMorphClass()
-            && $latestRoot?->actor_id === $actor?->getKey();
+            && (string) $latestRoot?->actor_id === (string) $actor?->getKey();
 
         if ($sameStatus && $sameActor) {
             return false;

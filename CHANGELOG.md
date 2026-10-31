@@ -2,6 +2,54 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## Unreleased
+
+Fixes from a full review of the package. It adds one migration, dispatches events after commit, and makes stale movement instances safe. Read the upgrade guide before you update.
+
+### Fixed
+
+- The publish tags are `kpi-migrations` and `kpi-config`. The `laravel-kpi-*` tags in the README and in earlier upgrade guides published nothing.
+- A `config/kpi.php` published before v3.1 no longer breaks `KPI::calculate()` (and so every `complete()`) or the `create_recurring_holidays_table` migration. Laravel merges package config only at the top level, so `kpi.models.recurring_holiday` and `kpi.tables.recurring_holidays` were `null`. Both now fall back to their defaults.
+- `add_parent_child_to_movements_table` no longer fails with "duplicate column parent_id" on a table created by the v1.0.0 stub, which already had `parent_id`. Its `down()` now also works on SQLite.
+- A completed movement keeps its stored `period` and `hours` when it is saved for another reason (`update(['notes' => ...])`, `touch()`, `restore()`). They are recalculated only when `received_at`, `completed_at` or `status` changes. The new `Movement::recalculate()` applies holiday or schedule changes to past movements on demand.
+- `Movement::complete()` re-reads its row under a lock. A stale instance no longer completes a movement a second time, which overwrote `completed_at` and `hours` and fired `Completed` again.
+- `Movement::pass()` on a completed movement throws a `LogicException`. Before, it created an open child that nothing could close.
+- `complete()` and `pass()` lock the parent row before its children, so concurrent calls no longer deadlock.
+- Movements received in the same second are ordered by `id`. `pass()` supersedes the newest one, and `passIfNotCurrent()` compares against the newest one, as `$model->movement` already did.
+- `passIfNotCurrent()` matches int-backed enum statuses, and actor keys whose PHP type differs from the stored `actor_id`. Before, both created duplicate movements.
+- `Movement::previous()`, `parent()` and `children()` return the configured `kpi.models.movement` class instead of the base `Movement`.
+- `Movement` honors `kpi.tables.movements`, and the migrations point the self-referencing foreign keys at that table.
+- A subclass's own `$table` wins over `kpi.tables.*` on `Movement`, `Holiday` and `RecurringHoliday`.
+- Movements are created, locked and wrapped in a transaction on the movable model's database connection, not the default connection.
+- `formatted_interval` no longer drops a unit (a 2h15m movement showed "2 hours 14 minutes").
+- `KPI::calculate()` no longer counts the seconds of a mid-day start past the end of the work day, and an empty `Collection` of schedules falls back to `kpi.schedule`.
+- `RecurringHoliday::factory()` works outside this repository.
+- The default `kpi.formats.datetime` is `d/m/Y h:i A`. `H:i A` printed times such as "13:05 PM".
+
+### Changed
+
+- `Passed` and `Completed` implement `ShouldDispatchAfterCommit`. Laravel dispatches them after the outermost transaction commits and drops them on rollback. A listener that throws can no longer roll back the `pass()` or `complete()` that fired it.
+- The trait's `pass()` reloads `$model->movement` before it dispatches `Passed`, so listeners see the new current movement.
+- `WorkSchedule` throws an `InvalidArgumentException` when a day does not end after it starts. Before, such a schedule caused a `DivisionByZeroError` or wrong results.
+- `formatted_interval` no longer depends on the current date. Durations of 4 weeks or more count a month as 4 weeks.
+- New migration `alter_previous_id_hours_and_received_at_on_movements_table`:
+  - `previous_id` is `ON DELETE SET NULL`. A hard delete no longer deletes later movements or other tracks. `parent_id` still cascades to children.
+  - `hours` is `decimal(12, 4)`. `decimal(8, 4)` overflowed after 9,999 working hours, and MariaDB and Postgres then rejected `complete()`.
+  - `received_at` is `NOT NULL DEFAULT CURRENT_TIMESTAMP`. The explicit default stops MySQL and MariaDB with `explicit_defaults_for_timestamp=OFF` from adding `ON UPDATE CURRENT_TIMESTAMP`.
+
+### Upgrade guide
+
+1. `composer update hasyirin/laravel-kpi`
+2. `php artisan vendor:publish --tag="kpi-migrations"`
+3. Set `received_at` on every movement where it is null. The migration stops with an error while any such row exists. For example: `UPDATE movements SET received_at = created_at WHERE received_at IS NULL`.
+4. `php artisan migrate`
+5. Check listeners of `Passed` and `Completed` that rely on running inside the transaction of `pass()` or `complete()`.
+6. If your published `config/kpi.php` has `'datetime' => 'd/m/Y H:i A'`, change `H` to `h`.
+
+### Internal
+
+- The test suite runs SQLite with foreign key constraints on, and rolls back every migration. It grew from 149 to 187 tests.
+
 ## v3.1.2 — typed movement relations - 2026-10-28
 
 Patch release improving the static-analysis types of the `InteractsWithMovement` trait. No runtime behavior changes; no action needed for consumers.
@@ -32,6 +80,10 @@ Patch release fixing a `TypeError` for apps that configure Carbon to use immutab
 
 If you implement `HasMovement` manually (not via the `InteractsWithMovement` trait) with a concrete `?Carbon` parameter, widen it to `?Carbon\CarbonInterface` to satisfy the updated interface signature. Consumers using the trait need no changes.
 
+### Note for `Movement` subclasses
+
+If you extend `Movement` and override `complete()`, `pass()` or `passIfNotCurrent()` with a `?Illuminate\Support\Carbon` date parameter, widen it to `?Carbon\CarbonInterface`. PHP rejects the narrower override with a fatal error when the class loads.
+
 **Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v3.1.0...v3.1.1
 
 ## v3.1.0 — fixed/recurring public holidays + substitute-day support - 2026-05-26
@@ -57,9 +109,9 @@ Minor release adding annually recurring public holidays and an opt-in next-worki
 ### Upgrade guide (v3.0 → v3.1)
 
 1. `composer update hasyirin/laravel-kpi`
-2. `php artisan vendor:publish --tag="laravel-kpi-migrations"`
+2. `php artisan vendor:publish --tag="kpi-migrations"`
 3. `php artisan migrate`
-4. (Optional) Re-publish config to see the new `recurring_holidays`, `recurring_holiday`, and `substitute` keys: `php artisan vendor:publish --tag="laravel-kpi-config" --force` — or manually merge them into your existing `config/kpi.php`.
+4. (Optional) Re-publish config to see the new `recurring_holidays`, `recurring_holiday`, and `substitute` keys: `php artisan vendor:publish --tag="kpi-config" --force` — or manually merge them into your existing `config/kpi.php`.
 5. Consumers who've overridden `kpi.models.holiday` with a custom subclass must add `observes_substitute` to its `$fillable` and `$casts`.
 
 **Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v3.0.0...v3.1.0
@@ -134,7 +186,7 @@ Major release introducing forest-of-movements per resource (multiple concurrent 
 ### Migration guide (v1 → v2)
 
 1. `composer require hasyirin/laravel-kpi:^2.0`
-2. `php artisan vendor:publish --tag="laravel-kpi-migrations"` (no `--force` — your existing `create_movements_table` migration is untouched; only the new `add_parent_child_to_movements_table` is copied.)
+2. `php artisan vendor:publish --tag="kpi-migrations"` (no `--force` — your existing `create_movements_table` migration is untouched; only the new `add_parent_child_to_movements_table` is copied.)
 3. `php artisan migrate` (runs the new `add_parent_child_to_movements_table` migration)
 4. Update any `pass(... completesLastMovement: false)` calls to `pass(... supersede: false)`.
 5. If you relied on `pass()` auto-closing the previous movement, either pass `supersede: true` explicitly or migrate to calling `$movement->complete()` when work on a movement is done.
@@ -201,7 +253,7 @@ Initial release.
 ### Migration guide (v1 → v2)
 
 1. `composer require hasyirin/laravel-kpi:^2.0`
-2. `php artisan vendor:publish --tag="laravel-kpi-migrations"`
+2. `php artisan vendor:publish --tag="kpi-migrations"`
    (no `--force` — your existing `create_movements_table` migration is untouched;
    only the new `add_parent_child_to_movements_table` is copied.)
 3. `php artisan migrate` (runs the new `add_parent_child_to_movements_table` migration)

@@ -7,7 +7,7 @@ use Hasyirin\KPI\Models\RecurringHoliday;
 
 return [
     'formats' => [
-        'datetime' => 'd/m/Y H:i A',
+        'datetime' => 'd/m/Y h:i A',
     ],
 
     'tables' => [

@@ -2,6 +2,7 @@
 
 use Hasyirin\KPI\Models\Holiday;
 use Hasyirin\KPI\Models\RecurringHoliday;
+use Illuminate\Database\Eloquent\Factories\Factory;
 
 it('persists observes_substitute on Holiday', function () {
     $holiday = Holiday::create([
@@ -136,4 +137,11 @@ it('occurrencesIn returns empty for an out-of-range query', function () {
     $dates = $h->occurrencesIn('2025-01-01', '2025-01-31');
 
     expect($dates)->toBeEmpty();
+});
+
+it('builds recurring holidays from the factory with the default factory name resolver', function () {
+    // Laravel's default resolver output for a model outside the App namespace
+    Factory::guessFactoryNamesUsing(fn (string $modelName) => 'Database\\Factories\\'.$modelName.'Factory');
+
+    expect(RecurringHoliday::factory()->make())->toBeInstanceOf(RecurringHoliday::class);
 });

@@ -64,6 +64,11 @@ it('creates work schedule with make', function () {
     expect($schedule->minutes())->toBe(480);
 });
 
+it('rejects a work schedule that does not end after it starts', function () {
+    expect(fn () => WorkSchedule::parse(['8:30', '8:00']))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => WorkSchedule::parse(['8:00', '8:00']))->toThrow(InvalidArgumentException::class);
+});
+
 // --- KPIMetadata ---
 
 it('creates metadata with defaults', function () {

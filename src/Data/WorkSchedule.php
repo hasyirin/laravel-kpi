@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Hasyirin\KPI\Data;
 
+use InvalidArgumentException;
+
 readonly class WorkSchedule
 {
     public function __construct(public Hour $start, public Hour $end)
     {
-        assert($this->start->hour <= $this->end->hour);
+        if ($this->start->minutes() >= $this->end->minutes()) {
+            throw new InvalidArgumentException('A work schedule must end after it starts.');
+        }
     }
 
     public static function parse(array $data): self

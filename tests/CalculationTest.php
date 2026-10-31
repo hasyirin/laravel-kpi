@@ -6,6 +6,7 @@ use Hasyirin\KPI\Data\WorkSchedule;
 use Hasyirin\KPI\Enums\Day;
 use Hasyirin\KPI\Facades\KPI;
 use Hasyirin\KPI\Models\Holiday;
+use Hasyirin\KPI\Models\Movement;
 use Hasyirin\KPI\Models\RecurringHoliday;
 use Illuminate\Support\Carbon;
 
@@ -360,4 +361,30 @@ it('substitutes a recurring holiday occurrence per year independently', function
     // 2026: Aug 31 (Mon, excluded directly) → excluded = 1
     expect($kpi2025->metadata->excluded)->toBe(1)
         ->and($kpi2026->metadata->excluded)->toBe(1);
+});
+
+// --- Config published by older versions ---
+
+it('calculates with a config published before recurring holidays existed', function () {
+    config()->set('kpi.models', ['movement' => Movement::class, 'holiday' => Holiday::class]);
+
+    // Mon 8:00 → 17:00 = 9 working hours
+    $kpi = KPI::calculate(Carbon::parse('2024-01-01 08:00'), Carbon::parse('2024-01-01 17:00'));
+
+    expect($kpi->hours)->toBe(9.0);
+});
+
+// --- Schedule input and boundaries ---
+
+it('falls back to the configured schedule when given an empty collection of schedules', function () {
+    $kpi = KPI::calculate(Carbon::parse('2024-01-01 08:00'), Carbon::parse('2024-01-01 17:00'), schedules: collect());
+
+    expect($kpi->hours)->toBe(9.0);
+});
+
+it('does not count the seconds of a mid-day start past the end of the work day', function () {
+    // Mon 09:15:30 → 17:00:00 = 464.5 minutes; Tue ends at 08:00 before work starts
+    $kpi = KPI::calculate(Carbon::parse('2024-01-01 09:15:30'), Carbon::parse('2024-01-02 08:00'));
+
+    expect($kpi->minutes)->toBe(464.5);
 });

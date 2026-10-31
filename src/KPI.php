@@ -7,6 +7,7 @@ use Carbon\CarbonInterface;
 use Hasyirin\KPI\Data\KPIData;
 use Hasyirin\KPI\Data\KPIMetadata;
 use Hasyirin\KPI\Data\WorkSchedule;
+use Hasyirin\KPI\Models\RecurringHoliday;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
 
@@ -19,11 +20,11 @@ class KPI
         Arrayable|array $schedules = [],
     ): KPIData {
 
-        if (empty($schedules)) {
+        $schedules = collect($schedules);
+
+        if ($schedules->isEmpty()) {
             $schedules = collect(config('kpi.schedule'))->map(fn (array $data) => WorkSchedule::parse($data));
         }
-
-        $schedules = collect($schedules);
 
         $total = ['period' => 0, 'minutes' => 0, 'scheduled' => 0, 'unscheduled' => 0, 'excluded' => 0];
 
@@ -35,7 +36,7 @@ class KPI
         $queryStart = $start->subDays(7);
 
         $holiday = config('kpi.models.holiday');
-        $recurring = config('kpi.models.recurring_holiday');
+        $recurring = config('kpi.models.recurring_holiday', RecurringHoliday::class);
 
         $oneOffOccurrences = $holiday::query()
             ->range($queryStart, $end)
@@ -110,7 +111,7 @@ class KPI
 
             $step = $this->sanitizeStartDate($schedule, $step);
 
-            $finish = min($end, $step->setHour($schedule->end->hour)->setMinute($schedule->end->minute));
+            $finish = min($end, $step->setTime($schedule->end->hour, $schedule->end->minute));
 
             $diff = $finish > $step ? $step->diffInMinutes($finish) : 0.0;
 

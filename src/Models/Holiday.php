@@ -28,7 +28,7 @@ class Holiday extends Model
 
     public function getTable(): string
     {
-        return config('kpi.tables.holidays', parent::getTable());
+        return $this->table ?? config('kpi.tables.holidays', parent::getTable());
     }
 
     public function scopeRange(Builder $query, CarbonInterface|string $start, CarbonInterface|string|null $end = null): void

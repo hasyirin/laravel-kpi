@@ -24,14 +24,14 @@ composer require hasyirin/laravel-kpi
 Publish and run the migrations:
 
 ```bash
-php artisan vendor:publish --tag="laravel-kpi-migrations"
+php artisan vendor:publish --tag="kpi-migrations"
 php artisan migrate
 ```
 
 Publish the config file:
 
 ```bash
-php artisan vendor:publish --tag="laravel-kpi-config"
+php artisan vendor:publish --tag="kpi-config"
 ```
 
 ## Configuration
@@ -46,7 +46,7 @@ use Hasyirin\KPI\Models\RecurringHoliday;
 
 return [
     'formats' => [
-        'datetime' => 'd/m/Y H:i A',
+        'datetime' => 'd/m/Y h:i A',
     ],
 
     'tables' => [
@@ -62,7 +62,7 @@ return [
     ],
 
     // Weekly work schedule — keyed by Day enum value (Sunday = 0 … Saturday = 6).
-    // Days omitted are treated as non-working days.
+    // Days omitted are treated as non-working days. Each day must end after it starts.
     'schedule' => [
         Day::MONDAY->value    => ['8:00', '17:00'],
         Day::TUESDAY->value   => ['8:00', '17:00'],
@@ -215,7 +215,17 @@ The package does NOT chain substitutes through other holidays — if a substitut
 
 #### Note on historical calculations
 
-`Movement::saving` stores `period` and `hours` at completion time. Past completed movements are frozen — adding a new holiday row does NOT retroactively change them. This is intentional: a holiday introduced in 2026 should not be assumed to have existed in 2020.
+`Movement::saving` stores `period` and `hours` at completion time, and recalculates them only when `received_at`, `completed_at` or `status` changes. Other saves (`update(['notes' => ...])`, `touch()`, `restore()`) keep the stored values. Past completed movements are frozen — adding a new holiday row does NOT retroactively change them. This is intentional: a holiday introduced in 2026 should not be assumed to have existed in 2020.
+
+To apply a holiday that you forgot to record, recalculate the completed movements it affects:
+
+```php
+// After adding a forgotten holiday on 2026-05-01
+Movement::query()->closed()
+    ->where('received_at', '<', '2026-05-02')
+    ->where('completed_at', '>=', '2026-05-01')
+    ->each(fn (Movement $movement) => $movement->recalculate());
+```
 
 ## Tracking movements on a model
 
@@ -274,6 +284,9 @@ $child = $root->pass('with_bob', actor: $bob);
 // $root is NOT auto-completed by this call.
 ```
 
+Calling `pass()` on a completed movement throws a `LogicException`, even when the
+instance in memory is stale and another request completed the row.
+
 To create a sibling of an existing child, call `pass()` on the parent:
 
 ```php
@@ -307,8 +320,11 @@ If the movement has open descendants, they are cascade-closed with the same
 `completed_at` timestamp. Each level computes its own `period`/`hours` via the
 `saving` hook.
 
-`complete()` is wrapped in a database transaction with `lockForUpdate()` on the
-open-children query, making concurrent `pass()`/`complete()` interleaving safe.
+`complete()` runs in a database transaction. It locks the movement row first and
+its open children second. `pass()` takes its locks in the same parent-before-children
+order, so concurrent `pass()`/`complete()` calls on the same tree do not deadlock.
+If another instance or request already completed the row, `complete()` refreshes
+the instance and returns it without firing `Completed` again.
 
 > **Concurrency note:** `pass()` and `complete()` use `lockForUpdate()` to serialize
 > operations on the same "previous" row, but a concurrent INSERT of a new sibling/root
@@ -377,6 +393,10 @@ $movement->previous;        // BelongsTo Movement — same-level chain pointer
 $movement->movable;         // MorphTo — back to the resource
 ```
 
+Movements use soft deletes. On a hard delete (`forceDelete()`), the database also
+deletes the movement's children (`parent_id` cascades) and sets `previous_id` to
+`null` on the movements that point at it. Later movements and other tracks stay.
+
 Query scopes on `Movement`:
 
 | Scope      | Filter                          |
@@ -405,6 +425,10 @@ parent was open, including time its open children were active. So
 `parent.hours ≥ Σ children.hours`.
 
 ## Events
+
+Both events implement `ShouldDispatchAfterCommit`. Laravel dispatches them after the
+outermost database transaction commits, and drops them if it rolls back. A listener
+that throws therefore cannot roll back the `pass()` or `complete()` that fired it.
 
 ### `Passed`
 

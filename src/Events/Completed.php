@@ -3,10 +3,11 @@
 namespace Hasyirin\KPI\Events;
 
 use Hasyirin\KPI\Models\Movement;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class Completed
+class Completed implements ShouldDispatchAfterCommit
 {
     use Dispatchable, SerializesModels;
 

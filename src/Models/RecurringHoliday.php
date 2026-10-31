@@ -3,6 +3,7 @@
 namespace Hasyirin\KPI\Models;
 
 use Carbon\CarbonInterface;
+use Hasyirin\KPI\Database\Factories\RecurringHolidayFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -45,7 +46,12 @@ class RecurringHoliday extends Model
 
     public function getTable(): string
     {
-        return config('kpi.tables.recurring_holidays', parent::getTable());
+        return $this->table ?? config('kpi.tables.recurring_holidays', parent::getTable());
+    }
+
+    protected static function newFactory(): RecurringHolidayFactory
+    {
+        return RecurringHolidayFactory::new();
     }
 
     public function scopeEffectiveIn(Builder $query, CarbonInterface|string $start, CarbonInterface|string|null $end = null): void
