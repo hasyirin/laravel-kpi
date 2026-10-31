@@ -468,3 +468,21 @@ it('looks back 7 days when the range starts with a time', function () {
 
     expect(KPI::calculate('2025-05-05 08:00', '2025-05-05 17:00')->metadata->excludedDays)->toBe(1);
 });
+
+it('converts a string with Z or an offset to kpi.timezone', function (string $start, string $end) {
+    config()->set('kpi.timezone', 'Asia/Kuala_Lumpur');
+
+    $kpi = KPI::calculate($start, $end);
+
+    expect($kpi->seconds)->toBe(32400)->and($kpi->period)->toBe(1.0);
+})->with([
+    'Z' => ['2025-01-01T00:00:00Z', '2025-01-01T09:00:00Z'],
+    'offset' => ['2025-01-01T08:00:00+08:00', '2025-01-01T17:00:00+08:00'],
+    'other offset' => ['2024-12-31T19:00:00-05:00', '2025-01-01T04:00:00-05:00'],
+]);
+
+it('reads a string without an offset in kpi.timezone', function () {
+    config()->set('kpi.timezone', 'Asia/Kuala_Lumpur');
+
+    expect(KPI::calculate('2025-01-01 08:00', '2025-01-01 17:00')->seconds)->toBe(32400);
+});

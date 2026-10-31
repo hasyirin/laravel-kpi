@@ -91,6 +91,6 @@ class KPI
     {
         return $moment instanceof CarbonInterface
             ? CarbonImmutable::instance($moment)->setTimezone($timezone)
-            : CarbonImmutable::parse($moment, $timezone);
+            : CarbonImmutable::parse($moment, $timezone)->setTimezone($timezone);
     }
 }
