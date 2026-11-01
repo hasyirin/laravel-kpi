@@ -48,7 +48,7 @@ v4 rebuilds the movement layer and the calculator. **There is no upgrade path fr
 - `Passed` and `Completed` dispatch after commit.
 - `period` is rounded once for the whole range. v3 truncated each day to 4 decimals.
 - `WorkSchedule` and `Hour` throw `InvalidArgumentException` on invalid input. `24:00` is no longer accepted.
-- `Holiday::range()` compares the `date` column directly, so an index on `date` can be used.
+- The `range` scope of `Holiday` compares the `date` column directly, so an index on `date` can be used.
 - `Movement`, `Holiday` and `RecurringHoliday` read the table name from a subclass `$table` first, then from `kpi.tables.*`.
 - The publish tags are `kpi-migrations` and `kpi-config`.
 

@@ -272,7 +272,7 @@ class Task extends Model implements HasMovement
 }
 ```
 
-Always create movements with `pass()`. The package sets `position` and `previous_id` there. `Movement::create()` without `position` is a database error, because `position` is required.
+Always create movements with `pass()`. The package sets `position` and `previous_id` there. `position` is required and is not fillable, so `Movement::create()` cannot set it. Use `pass()`.
 
 ### Levels
 
@@ -482,23 +482,30 @@ Movements on their own connection, while the resource class sets no `$connection
 You can call the package inside `DB::transaction()`. The package then joins your transaction and does not retry. You get the exception and you must handle it.
 
 - `UniqueConstraintViolationException`: a write used a stale read.
-- `Illuminate\Database\DeadlockException`: a deadlock, a lock wait timeout on MySQL or MariaDB (error 1205 and 1020), or a serialization failure on PostgreSQL (40001).
+- `Illuminate\Database\DeadlockException`: a deadlock, a lock wait timeout on MySQL or MariaDB (1205), a MariaDB snapshot isolation conflict (1020), or a serialization failure on PostgreSQL (40001).
 
-`DB::transaction($callback, 3)` retries `DeadlockException` only. For `UniqueConstraintViolationException`, add a loop:
+Do not rely on `DB::transaction($callback, 3)` to retry `DeadlockException`. On PostgreSQL, a 40001 error gets code 0 and may not be retried. Use a loop that catches both exceptions:
 
 ```php
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
-for ($attempt = 1; ; $attempt++) {
-    try {
-        return DB::transaction(function () use ($task, $user) {
-            // your own reads and writes
-            return $task->pass(TaskStatus::InProgress, actor: $user);
-        }, 3);
-    } catch (UniqueConstraintViolationException $exception) {
-        if ($attempt >= 3) {
-            throw $exception;
+function startWork(Task $task, User $user): Movement
+{
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            return DB::transaction(function () use ($task, $user) {
+                $movement = $task->pass(TaskStatus::InProgress, actor: $user);
+
+                // your other work here
+
+                return $movement;
+            });
+        } catch (UniqueConstraintViolationException|DeadlockException $exception) {
+            if ($attempt >= 3) {
+                throw $exception;
+            }
         }
     }
 }
@@ -577,7 +584,7 @@ DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=kpi DB_USERNAME=postgres DB_PASSWORD=
 - Use a throwaway database. The harness drops and creates the tables `movements`, `holidays`, `recurring_holidays`, `tasks` and `race_resources`.
 - Each scenario runs 5 times. The command exits with a non-zero code if a scenario fails.
 
-The check ran on PostgreSQL 17, MySQL 8.4 and MariaDB 12.3. MariaDB ran twice: with `innodb_snapshot_isolation` on and off. The harness prints the setting at the start.
+The check ran on PostgreSQL 17, MySQL 8.4 and MariaDB 11.8. MariaDB ran twice: with `innodb_snapshot_isolation` on and off. The harness prints the setting at the start.
 
 ## Changelog
 
