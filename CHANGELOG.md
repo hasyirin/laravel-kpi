@@ -2,7 +2,7 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
-## v4.0.0 - Unreleased
+## v4.0.0 — rebuilt movement layer and calculator - 2026-11-02
 
 v4 rebuilds the movement layer and the calculator. **There is no upgrade path from v3.** The schema, the config and the public API changed. Apps that run v3 need a hand-written migration:
 
@@ -54,6 +54,8 @@ v4 rebuilds the movement layer and the calculator. **There is no upgrade path fr
 - The `range` scope of `Holiday` compares the `date` column directly, so an index on `date` can be used.
 - `Movement`, `Holiday` and `RecurringHoliday` read the table name from a subclass `$table` first, then from `kpi.tables.*`.
 - The publish tags are `kpi-migrations` and `kpi-config`.
+
+**Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v3.1.2...v4.0.0
 
 ## v3.1.2 — typed movement relations - 2026-10-28
 
