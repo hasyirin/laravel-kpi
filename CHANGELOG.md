@@ -2,6 +2,21 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## v4.0.1 — stricter hour parsing - 2026-11-02
+
+Patch release. Only `Hour::parse()` changes at runtime.
+
+### Fixed
+
+- `Hour::parse()` throws `InvalidArgumentException` on a string with a trailing newline, such as `"8:00\n"`. It accepted that string before.
+- The README `startWork()` example now has all its `use` lines.
+
+### Internal
+
+- A test for the actor back-fill could not fail. A new test covers a target that closes after it was read.
+
+**Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v4.0.0...v4.0.1
+
 ## v4.0.0 — rebuilt movement layer and calculator - 2026-11-02
 
 v4 rebuilds the movement layer and the calculator. **There is no upgrade path from v3.** The schema, the config and the public API changed. Apps that run v3 need a hand-written migration:

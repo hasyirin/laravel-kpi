@@ -1325,19 +1325,35 @@ it('back-fills the given actor only when the row has none', function () {
         ->and($with->fresh()->actor_id)->toBe($existing->id);
 });
 
-it('does not back-fill descendants or an already closed row', function () {
+it('does not back-fill descendants', function () {
     $task = Task::create(['title' => 'T']);
     $actor = Task::create(['title' => 'Actor']);
-    $closed = $task->pass('closed', receivedAt: Carbon::parse('2025-01-01 08:00'));
-    $closed->complete(Carbon::parse('2025-01-01 09:00'));
-    $root = $task->pass('root', receivedAt: Carbon::parse('2025-01-01 08:00'), supersede: false);
+    $root = $task->pass('root', receivedAt: Carbon::parse('2025-01-01 08:00'));
     $child = $root->pass('child', receivedAt: Carbon::parse('2025-01-01 08:00'));
 
     $task->pass('next', actor: $actor, supersede: true);
 
-    expect($closed->fresh()->actor_id)->toBeNull()
-        ->and($child->fresh()->actor_id)->toBeNull()
+    expect($child->fresh()->actor_id)->toBeNull()
         ->and($root->fresh()->actor_id)->toBe($actor->id);
+});
+
+it('does not back-fill a target that closed after it was read', function () {
+    $task = Task::create(['title' => 'T']);
+    $actor = Task::create(['title' => 'Actor']);
+    $target = $task->pass('target', receivedAt: Carbon::parse('2025-01-01 08:00'));
+    $closed = false;
+    DB::listen(function ($query) use (&$closed, $target) {
+        if (! $closed && str_contains($query->sql, 'level_key') && str_contains($query->sql, 'completed_at')) {
+            $closed = true;
+            DB::table('movements')->where('id', $target->id)->update(['completed_at' => '2025-01-01 09:00:00']);
+        }
+    });
+
+    $task->pass('next', actor: $actor);
+
+    expect($closed)->toBeTrue()
+        ->and($target->fresh()->actor_id)->toBeNull()
+        ->and($target->fresh()->completed_at->toDateTimeString())->toBe('2025-01-01 09:00:00');
 });
 
 it('reads open children without a lock when completing', function () {

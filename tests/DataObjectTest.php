@@ -21,7 +21,7 @@ it('parses single-digit hours and the last minute of the day', function () {
 
 it('rejects a string that is not H:MM or HH:MM', function (string $value) {
     expect(fn () => Hour::parse($value))->toThrow(InvalidArgumentException::class);
-})->with(['ab:cd', '8', '8:0', '', '08:30:00', ' 8:00']);
+})->with(['ab:cd', '8', '8:0', '', '08:30:00', ' 8:00', "8:00\n"]);
 
 it('creates hour with make', function () {
     $hour = Hour::make(14, 45);

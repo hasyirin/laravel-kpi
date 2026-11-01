@@ -26,7 +26,7 @@ readonly class Hour
 
     public static function parse(string $data): self
     {
-        if (preg_match('/^(\d{1,2}):(\d{2})$/', $data, $matches) !== 1) {
+        if (preg_match('/^(\d{1,2}):(\d{2})\z/', $data, $matches) !== 1) {
             throw new InvalidArgumentException('An hour must be written as H:MM or HH:MM.');
         }
 

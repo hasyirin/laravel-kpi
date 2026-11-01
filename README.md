@@ -489,6 +489,10 @@ You can call the package inside `DB::transaction()`. The package then joins your
 Do not rely on `DB::transaction($callback, 3)` to retry `DeadlockException`. On PostgreSQL, a 40001 error gets code 0 and may not be retried. Use a loop that catches both exceptions:
 
 ```php
+use App\Enums\TaskStatus;
+use App\Models\Task;
+use App\Models\User;
+use Hasyirin\KPI\Models\Movement;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
