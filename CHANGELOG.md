@@ -2,53 +2,55 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
-## Unreleased
+## v4.0.0 - Unreleased
 
-Fixes from a full review of the package. It adds one migration, dispatches events after commit, and makes stale movement instances safe. Read the upgrade guide before you update.
+v4 rebuilds the movement layer and the calculator. **There is no upgrade path from v3.** The schema, the config and the public API changed. Apps that run v3 need a hand-written migration:
 
-### Fixed
+- `hours` becomes `seconds` (times 3600).
+- `received_at` and `completed_at` change type to `dateTime`.
+- `deleted_at` goes away on movements.
+- `position` is back-filled for each level, in `received_at`, `id` order, before the unique index is added.
 
-- The publish tags are `kpi-migrations` and `kpi-config`. The `laravel-kpi-*` tags in the README and in earlier upgrade guides published nothing.
-- A `config/kpi.php` published before v3.1 no longer breaks `KPI::calculate()` (and so every `complete()`) or the `create_recurring_holidays_table` migration. Laravel merges package config only at the top level, so `kpi.models.recurring_holiday` and `kpi.tables.recurring_holidays` were `null`. Both now fall back to their defaults.
-- `add_parent_child_to_movements_table` no longer fails with "duplicate column parent_id" on a table created by the v1.0.0 stub, which already had `parent_id`. Its `down()` now also works on SQLite.
-- A completed movement keeps its stored `period` and `hours` when it is saved for another reason (`update(['notes' => ...])`, `touch()`, `restore()`). They are recalculated only when `received_at`, `completed_at` or `status` changes. The new `Movement::recalculate()` applies holiday or schedule changes to past movements on demand.
-- `Movement::complete()` re-reads its row under a lock. A stale instance no longer completes a movement a second time, which overwrote `completed_at` and `hours` and fired `Completed` again.
-- `Movement::pass()` on a completed movement throws a `LogicException`. Before, it created an open child that nothing could close.
-- `complete()` and `pass()` lock the parent row before its children, so concurrent calls no longer deadlock.
-- Movements received in the same second are ordered by `id`. `pass()` supersedes the newest one, and `passIfNotCurrent()` compares against the newest one, as `$model->movement` already did.
-- `passIfNotCurrent()` matches int-backed enum statuses, and actor keys whose PHP type differs from the stored `actor_id`. Before, both created duplicate movements.
-- `Movement::previous()`, `parent()` and `children()` return the configured `kpi.models.movement` class instead of the base `Movement`.
-- `Movement` honors `kpi.tables.movements`, and the migrations point the self-referencing foreign keys at that table.
-- A subclass's own `$table` wins over `kpi.tables.*` on `Movement`, `Holiday` and `RecurringHoliday`.
-- Movements are created, locked and wrapped in a transaction on the movable model's database connection, not the default connection.
-- `formatted_interval` no longer drops a unit (a 2h15m movement showed "2 hours 14 minutes").
-- `KPI::calculate()` no longer counts the seconds of a mid-day start past the end of the work day, and an empty `Collection` of schedules falls back to `kpi.schedule`.
-- `RecurringHoliday::factory()` works outside this repository.
-- The default `kpi.formats.datetime` is `d/m/Y h:i A`. `H:i A` printed times such as "13:05 PM".
+### Removed
+
+- The `formatted_period`, `interval`, `formatted_interval` and `formatted_received_at` accessors of `Movement`. Use `kpi()`, for example `$movement->kpi()->interval()->forHumans(['parts' => 2])`.
+- The `kpi.formats` config key.
+- The `hours` column of `movements`.
+- The `KPIData::$minutes` and `KPIData::$hours` properties.
+- Soft deletes on `Movement`.
+- The add and alter migrations. The package ships three migration stubs: `create_movements_table`, `create_holidays_table` and `create_recurring_holidays_table`.
+- `ext-bcmath`.
+- Laravel 12.
+
+### Renamed
+
+- `Passed::$previous` is now `Passed::$superseded`.
+- The `KPIMetadata` fields: `scheduledSeconds`, `scheduledDays`, `unscheduledDays` and `excludedDays`.
+
+### Added
+
+- `Movement::recalculate()` and `Movement::kpi()`.
+- `KPIData::$seconds`, and `KPIData::minutes()`, `hours()` and `interval()`.
+- The `kpi.timezone` config key. It sets the time zone of the schedule. `null` uses `config('app.timezone')`.
+- The `seconds`, `level_key` and `position` columns of `movements`, the unique index `{table}_level_position_unique`, and `CHECK` constraints on PostgreSQL, MySQL and MariaDB.
+- Support for PostgreSQL and MariaDB next to MySQL and SQLite. CI runs the suite on PostgreSQL 17, MySQL 8.4 and MariaDB. `race/run.php` is a two-process race check for real databases.
 
 ### Changed
 
-- `Passed` and `Completed` implement `ShouldDispatchAfterCommit`. Laravel dispatches them after the outermost transaction commits and drops them on rollback. A listener that throws can no longer roll back the `pass()` or `complete()` that fired it.
-- The trait's `pass()` reloads `$model->movement` before it dispatches `Passed`, so listeners see the new current movement.
-- `WorkSchedule` throws an `InvalidArgumentException` when a day does not end after it starts. Before, such a schedule caused a `DivisionByZeroError` or wrong results.
-- `formatted_interval` no longer depends on the current date. Durations of 4 weeks or more count a month as 4 weeks.
-- New migration `alter_previous_id_hours_and_received_at_on_movements_table`:
-  - `previous_id` is `ON DELETE SET NULL`. A hard delete no longer deletes later movements or other tracks. `parent_id` still cascades to children.
-  - `hours` is `decimal(12, 4)`. `decimal(8, 4)` overflowed after 9,999 working hours, and MariaDB and Postgres then rejected `complete()`.
-  - `received_at` is `NOT NULL DEFAULT CURRENT_TIMESTAMP`. The explicit default stops MySQL and MariaDB with `explicit_defaults_for_timestamp=OFF` from adding `ON UPDATE CURRENT_TIMESTAMP`.
-
-### Upgrade guide
-
-1. `composer update hasyirin/laravel-kpi`
-2. `php artisan vendor:publish --tag="kpi-migrations"`
-3. Set `received_at` on every movement where it is null. The migration stops with an error while any such row exists. For example: `UPDATE movements SET received_at = created_at WHERE received_at IS NULL`.
-4. `php artisan migrate`
-5. Check listeners of `Passed` and `Completed` that rely on running inside the transaction of `pass()` or `complete()`.
-6. If your published `config/kpi.php` has `'datetime' => 'd/m/Y H:i A'`, change `H` to `h`.
-
-### Internal
-
-- The test suite runs SQLite with foreign key constraints on, and rolls back every migration. It grew from 149 to 187 tests.
+- `previous_id` links to the last written movement on the level, even if it is closed.
+- Writes lock the resource row first. `pass()`, `passIfNotCurrent()` and `complete()` retry deadlocks and unique violations when the package owns the transaction. Inside your own transaction, you get the exception. See the README.
+- Model events of a movement can fire more than once, because a write can retry.
+- `pass()` or `complete()` on a hard-deleted movement throws `LogicException`.
+- `pass()` on a completed movement throws `LogicException`.
+- A write whose resource row is gone throws `LogicException`.
+- `movement()` returns the last written open movement (ordered by `id`).
+- The package converts given times to the app time zone before it stores them.
+- `Passed` and `Completed` dispatch after commit.
+- `period` is rounded once for the whole range. v3 truncated each day to 4 decimals.
+- `WorkSchedule` and `Hour` throw `InvalidArgumentException` on invalid input. `24:00` is no longer accepted.
+- `Holiday::range()` compares the `date` column directly, so an index on `date` can be used.
+- `Movement`, `Holiday` and `RecurringHoliday` read the table name from a subclass `$table` first, then from `kpi.tables.*`.
+- The publish tags are `kpi-migrations` and `kpi-config`.
 
 ## v3.1.2 — typed movement relations - 2026-10-28
 

@@ -120,6 +120,7 @@ No `deleted_at`. Add an index on `parent_id` for the open-children lookup.
 **Constraints that make invalid states database errors** (after tests):
 
 - `UNIQUE (movable_type, movable_id, level_key, position)`. This also serves the same-level lookups. It rejects a duplicate first movement on a level and a fork in the level's chain, so a write from a stale read fails instead of storing a wrong link. `level_key` exists because NULLs do not collide in a unique index, so `parent_id` cannot be used directly.
+- The unique index has the explicit name `{table}_level_position_unique`, because the generated name exceeds MySQL's 64 characters. (after build)
 - `level_key` is `virtualAs` on MySQL, MariaDB and SQLite, and `storedAs` on PostgreSQL. A stored column is rejected on MySQL 8.4 (error 1215), because `parent_id` has `ON DELETE CASCADE`. PostgreSQL 17 has no virtual columns. The stub chooses by driver with one condition. A generated column cannot be written wrong by a subclass, `$fillable` or a mass update.
 - `CHECK (completed_at IS NULL OR completed_at >= received_at)`.
 - `CHECK (completed_at IS NOT NULL OR seconds IS NULL)`.
@@ -216,6 +217,8 @@ Given times (`receivedAt`, and `$at` in `complete()`) are converted to the app t
   - `DB::transaction($callback, 3)` retries the deadlock case only. For a unique violation, the caller needs its own `try`/`catch` loop around `DB::transaction()`. The README shows this loop.
   - The caller must never catch either exception from a package call and then commit. After a lock wait timeout, MariaDB keeps the earlier statements of the transaction, and Laravel does not roll back to the savepoint for a concurrency error. So a superseded movement could stay closed with no successor. Verified on MariaDB 12.3 for error 1205. Errors 1020 and 1213 roll back the whole transaction, so they do not cause this.
   - On PostgreSQL, the nested transaction's savepoint keeps the caller's transaction usable after a unique violation (verified on PostgreSQL 17). The caller still must not commit as if the pass succeeded.
+  - On PostgreSQL, `lock_timeout` (SQLSTATE 55P03) reaches the caller as a plain `QueryException`, which Laravel does not retry. A lock wait timeout on MySQL and MariaDB reaches the caller as `DeadlockException`. The caller must not catch either and then commit. (after build)
+  - Limitation: when the resources are on another connection, a caller's transaction on the movement connection only releases the resource lock before the caller commits. A second request can then miss those writes. With two connections, the caller must not wrap the package call in its own transaction on the movement connection. The README names this. (after build)
 - Stale reads inside a caller's transaction. On MySQL and MariaDB, the read view is created by the first plain read of *any* table in the transaction. So if the caller's own transaction read any table before calling the package, the plain lookups can be stale. Verified on MariaDB 12.3: a read of an unrelated table made a later read of movements stale, even after the resource lock. (after tests)
   - A stale link or `position` is rejected by the unique index. Verified with the first-movement and open-tail cases on MySQL 8.4 and MariaDB 12.3 (error 1062, or 1020 with snapshot isolation on), and the closed-tail case on MariaDB 12.3.
   - Two cases stay silent, and no constraint catches them. The open-children and descendants queries can miss a new child, so a supersede or cascade can close a parent that has a new open child, or leave that child open. This needs children on the resource. And `passIfNotCurrent()` can compare with a stale row and return `false` without a write. This can happen without children.
@@ -293,6 +296,7 @@ The existing calculation tests define the expected results, converted to the new
 
 - One internal class returns the excluded-day set for a range and a schedule: one-off holidays, recurring occurrences, substitute days (rules as in the v3.1 spec, including the 7-day look-back), and `$excludeDates`.
 - `Holiday::scopeRange` compares the `date` column directly instead of using `whereDate`, so the index on `date` can be used. It compares with date strings (`Y-m-d`) of the range bounds, taken in `kpi.timezone`. A bound with a time would drop a holiday on the first day, because SQLite compares the strings and MySQL compares a date with a date-time. (after review)
+- `scopeRange` uses `date < end date + 1 day`, because the `date` cast stores a time on SQLite, so `date <= end date` would drop a holiday on the last day. (after build)
 - `RecurringHoliday::factory()` works outside this repository.
 
 ### 7. Validation
