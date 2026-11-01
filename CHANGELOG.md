@@ -6,9 +6,10 @@ All notable changes to `laravel-kpi` will be documented in this file.
 
 v4 rebuilds the movement layer and the calculator. **There is no upgrade path from v3.** The schema, the config and the public API changed. Apps that run v3 need a hand-written migration:
 
-- `hours` becomes `seconds` (times 3600).
+- `hours` becomes `seconds`: `seconds = round(hours * 3600)`.
 - `received_at` and `completed_at` change type to `dateTime`.
-- `deleted_at` goes away on movements.
+- `deleted_at` goes away on movements. Hard-delete rows with `deleted_at` set (children cascade) before you drop the column. If you keep them, they come back to life.
+- `previous_id` values keep their v3 meaning (the superseded row), because v4 does not rewrite them. New rows link to the last written movement.
 - `position` is back-filled for each level, in `received_at`, `id` order, before the unique index is added.
 
 ### Removed
@@ -42,6 +43,8 @@ v4 rebuilds the movement layer and the calculator. **There is no upgrade path fr
 - Model events of a movement can fire more than once, because a write can retry.
 - `pass()` or `complete()` on a hard-deleted movement throws `LogicException`.
 - `pass()` on a completed movement throws `LogicException`.
+- `$movement->pass()` and `complete()` replace the unsaved attributes of the receiver with the stored row.
+- `Hour::parse()` throws `InvalidArgumentException` if the string is not `H:MM` or `HH:MM`.
 - A write whose resource row is gone throws `LogicException`.
 - `movement()` returns the last written open movement (ordered by `id`).
 - The package converts given times to the app time zone before it stores them.

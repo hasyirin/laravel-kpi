@@ -22,18 +22,18 @@ use LogicException;
 /**
  * @property int $id
  * @property ?int $parent_id
- * @property int $previous_id
+ * @property ?int $previous_id
  * @property int $movable_id
  * @property string $movable_type
  * @property int $position
- * @property int $sender_id
- * @property string $sender_type
+ * @property ?int $sender_id
+ * @property ?string $sender_type
  * @property ?int $actor_id
  * @property ?string $actor_type
  * @property string $status
  * @property ?float $period
  * @property ?int $seconds
- * @property string $notes
+ * @property ?string $notes
  * @property bool $expects_children
  * @property CarbonInterface $received_at
  * @property ?CarbonInterface $completed_at
@@ -180,10 +180,7 @@ class Movement extends Model
         return $this;
     }
 
-    /**
-     * @internal
-     */
-    public function closeLocked(CarbonInterface $at, ?Model $backfillActor = null): bool
+    protected function closeLocked(CarbonInterface $at, ?Model $backfillActor = null): bool
     {
         $this->fillFromLockedRow();
 

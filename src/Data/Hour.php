@@ -26,9 +26,11 @@ readonly class Hour
 
     public static function parse(string $data): self
     {
-        [$hour, $minute] = explode(':', $data);
+        if (preg_match('/^(\d{1,2}):(\d{2})$/', $data, $matches) !== 1) {
+            throw new InvalidArgumentException('An hour must be written as H:MM or HH:MM.');
+        }
 
-        return new self(intval($hour), intval($minute));
+        return new self((int) $matches[1], (int) $matches[2]);
     }
 
     public static function make(int $hour, int $minute = 0): self

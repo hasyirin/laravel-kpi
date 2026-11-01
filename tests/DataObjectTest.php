@@ -14,6 +14,15 @@ it('parses hour from string', function () {
         ->and($hour->minute)->toBe(30);
 });
 
+it('parses single-digit hours and the last minute of the day', function () {
+    expect(Hour::parse('8:00')->minutes())->toBe(480)
+        ->and(Hour::parse('23:59')->minutes())->toBe(1439);
+});
+
+it('rejects a string that is not H:MM or HH:MM', function (string $value) {
+    expect(fn () => Hour::parse($value))->toThrow(InvalidArgumentException::class);
+})->with(['ab:cd', '8', '8:0', '', '08:30:00', ' 8:00']);
+
 it('creates hour with make', function () {
     $hour = Hour::make(14, 45);
 

@@ -20,8 +20,8 @@ class TestCase extends Orchestra
     {
         parent::setUp();
 
-        // Migration stubs instantiate models (for foreignIdFor()), which boots them
-        // on a stale event dispatcher. Clear so they re-boot with the test dispatcher.
+        // A model booted in an earlier test keeps its listeners on that test's event
+        // dispatcher. Clear so the model boots again with the current dispatcher.
         Model::clearBootedModels();
 
         Factory::guessFactoryNamesUsing(

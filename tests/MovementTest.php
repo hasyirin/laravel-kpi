@@ -1312,15 +1312,13 @@ it('discards unsaved attribute changes when it reads the row', function () {
 
 it('back-fills the given actor only when the row has none', function () {
     $task = Task::create(['title' => 'T']);
+    $other = Task::create(['title' => 'Other']);
     $actor = Task::create(['title' => 'Actor']);
     $existing = Task::create(['title' => 'Existing']);
-    $without = $task->pass('without', supersede: false);
-    $with = $task->pass('with', actor: $existing, supersede: false);
-
-    DB::transaction(function () use ($without, $with, $actor) {
-        $without->closeLocked(now(), $actor);
-        $with->closeLocked(now(), $actor);
-    });
+    $without = $task->pass('without');
+    $task->pass('next', actor: $actor);
+    $with = $other->pass('with', actor: $existing);
+    $other->pass('next', actor: $actor);
 
     expect($without->fresh()->actor_id)->toBe($actor->id)
         ->and($without->fresh()->actor_type)->toBe(Task::class)
@@ -1330,17 +1328,14 @@ it('back-fills the given actor only when the row has none', function () {
 it('does not back-fill descendants or an already closed row', function () {
     $task = Task::create(['title' => 'T']);
     $actor = Task::create(['title' => 'Actor']);
-    $root = $task->pass('root', receivedAt: Carbon::parse('2025-01-01 08:00'));
-    $child = $root->pass('child', receivedAt: Carbon::parse('2025-01-01 08:00'));
-    $closed = $task->pass('closed', receivedAt: Carbon::parse('2025-01-01 08:00'), supersede: false);
+    $closed = $task->pass('closed', receivedAt: Carbon::parse('2025-01-01 08:00'));
     $closed->complete(Carbon::parse('2025-01-01 09:00'));
+    $root = $task->pass('root', receivedAt: Carbon::parse('2025-01-01 08:00'), supersede: false);
+    $child = $root->pass('child', receivedAt: Carbon::parse('2025-01-01 08:00'));
 
-    $closedResult = $closed->closeLocked(now(), $actor);
-    $rootResult = $root->closeLocked(now(), $actor);
+    $task->pass('next', actor: $actor, supersede: true);
 
-    expect($closedResult)->toBeFalse()
-        ->and($rootResult)->toBeTrue()
-        ->and($closed->fresh()->actor_id)->toBeNull()
+    expect($closed->fresh()->actor_id)->toBeNull()
         ->and($child->fresh()->actor_id)->toBeNull()
         ->and($root->fresh()->actor_id)->toBe($actor->id);
 });
@@ -1547,10 +1542,14 @@ it('skips the close of an already closed row', function () {
     $movement = $task->pass('a');
     $stale = Movement::find($movement->id);
     $movement->complete();
+    $completedAt = $movement->fresh()->completed_at;
     Event::fake([Completed::class]);
 
-    expect($stale->closeLocked(now()))->toBeFalse();
+    $stale->complete(now()->addHour());
+
     Event::assertNotDispatched(Completed::class);
+    expect($stale->completed_at->equalTo($completedAt))->toBeTrue()
+        ->and($movement->fresh()->completed_at->equalTo($completedAt))->toBeTrue();
 });
 
 it('skips the close of a stale target and reports no superseded movement', function () {

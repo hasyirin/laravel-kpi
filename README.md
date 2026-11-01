@@ -324,6 +324,8 @@ $child = $root->pass('with_bob', actor: $bob);
 
 `pass()` on a completed movement throws `LogicException`. This is also true when your instance is stale and another request completed the row.
 
+`$movement->pass()` reads the row of the receiver first, like `complete()`. It replaces the attributes of your instance with the stored ones. So unsaved attribute changes on the receiver are lost.
+
 To make a sibling of a child, call `pass()` on the parent:
 
 ```php
@@ -445,7 +447,7 @@ $movement->kpi()->interval()->forHumans(['parts' => 2]);
 
 A status in `kpi.status.{morph}.except` stores zero, and `kpi()` returns zero for it, open or closed.
 
-A parent's time includes the time of its open children. So `parent.seconds >= sum(children.seconds)`.
+A parent's time runs from its own `received_at` to its `completed_at`. It is not the sum of its children.
 
 ## Locking, retries and model events
 
@@ -457,8 +459,8 @@ After the lock, the package reads the level with plain queries. It does this on 
 
 When the package starts the transaction, it retries:
 
-- A concurrency error (deadlock) is retried up to 3 times by Laravel's `transaction($callback, 3)`.
-- A unique violation is retried up to 3 times by a loop around it. Laravel does not retry unique violations itself.
+- A concurrency error (deadlock) gets up to 3 attempts from Laravel's `transaction($callback, 3)`.
+- A unique violation gets up to 3 attempts from a loop around it. Laravel does not retry unique violations itself.
 
 Each attempt reads every row again, reads a new `now()` and builds a new movement. When an attempt rolls back, Laravel drops its pending events. So `Passed` and `Completed` fire once, after the final commit.
 

@@ -1,6 +1,6 @@
 # v4.0 — Clean-slate redesign
 
-**Status:** Design, awaiting approval. A Fable review on 2026-10-31 led to the changes marked "(after review)". An architecture review and database tests on 2026-11-01 led to the changes marked "(after tests)".
+**Status:** Approved and built on branch `v4`. A Fable review on 2026-10-31 led to the changes marked "(after review)". An architecture review and database tests on 2026-11-01 led to the changes marked "(after tests)".
 **Target version:** 4.0.0 (major). No upgrade path from v3.
 **Starting point:** the working tree of branch `fix/review-findings` (uncommitted v3 bug fixes, 187 passing tests).
 
@@ -337,7 +337,7 @@ The existing calculation tests define the expected results, converted to the new
 ## Notes for the two apps (outside this package)
 
 - Both `MovementDataTable` classes: format `received_at` in the app, and replace `interval`/`formatted_interval` with `kpi()->seconds` and `kpi()->interval()->forHumans(['parts' => 2])`.
-- Each app needs a hand-written migration: `hours` becomes `seconds` (times 3600); `received_at` and `completed_at` change type; `deleted_at` goes away on movements; `position` is back-filled per level in `received_at`, `id` order before the unique index is added.
+- Each app needs a hand-written migration: `hours` becomes `seconds` (`seconds = round(hours * 3600)`); `received_at` and `completed_at` change type; `deleted_at` goes away on movements (hard-delete rows with `deleted_at` set, children cascade, before you drop the column, or they come back to life); old `previous_id` values keep their v3 meaning (the superseded row), because v4 does not rewrite them; `position` is back-filled per level in `received_at`, `id` order before the unique index is added.
 - mbpg: `Cancel` runs statements inside its own transaction before it calls `pass()`, and `Review` also calls `pass()` inside a transaction. Eight other files use both `passIfNotCurrent()` and a transaction; these call sites are not yet traced. Any that read a table first can hit the stale `passIfNotCurrent()` case in 4.3 on MariaDB. Each such site must handle the exceptions the README describes. mbpg uses no children, so the supersede case does not apply.
 - mpkemaman: the app time zone is `UTC`, and the app never passes `receivedAt`, so its stored times come from `now()` in UTC. If its working hours are Malaysian time, set `kpi.timezone` to `Asia/Kuala_Lumpur`; that converts those times correctly. It also has its own copy of the calculator in `app/Domain/Shared/KPI/KPI.php`.
 - mbpg: the local `.env` sets `APP_TIMEZONE=Asia/Kuala_Lumpur`, so `kpi.timezone` can stay null if production does the same.
