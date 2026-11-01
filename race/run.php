@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Hasyirin\KPI\Tests\TestSupport\Models\Task;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -62,6 +61,8 @@ final class Race
 
     public int $lockWaits = 0;
 
+    private float $holderReleasedAt = INF;
+
     public function __construct(private readonly string $driver)
     {
         $this->dir = sys_get_temp_dir().'/kpi-race-'.getmypid().'-'.uniqid();
@@ -93,7 +94,7 @@ final class Race
     public function join(int $timeoutSeconds = 70): array
     {
         $logs = [];
-        foreach ($this->workers as $worker) {
+        foreach ($this->workers as $key => $worker) {
             while (proc_get_status($worker['process'])['running']) {
                 if (microtime(true) - $worker['started'] > $timeoutSeconds) {
                     proc_terminate($worker['process'], SIGKILL);
@@ -102,13 +103,13 @@ final class Race
                 usleep(5000);
             }
             proc_close($worker['process']);
+            unset($this->workers[$key]);
             $file = "$this->dir/{$worker['role']}.log.json";
             if (! is_file($file)) {
                 throw new RaceFailure("worker {$worker['role']} crashed: ".@file_get_contents("$this->dir/{$worker['role']}.out"));
             }
             $logs[$worker['role']] = json_decode(file_get_contents($file), true);
         }
-        $this->workers = [];
 
         foreach ($logs as $role => $log) {
             check($log['barrier_timeouts'] === [], "$role barrier timeout: ".implode(',', $log['barrier_timeouts']));
@@ -131,6 +132,17 @@ final class Race
         touch("$this->dir/$name");
     }
 
+    public function releaseHolder(): void
+    {
+        $this->holderReleasedAt = microtime(true);
+        $this->release('go');
+    }
+
+    public function checkWaitedOnResourceLock(array $waiter): void
+    {
+        check(($waiter['locks'][0]['at'] ?? 0) > $this->holderReleasedAt, "{$waiter['role']} did not wait on the resource row: its resource lock was not acquired after the holder was released");
+    }
+
     public function awaitServerLockWait(int $timeoutMs = 10000): void
     {
         $waiting = $this->driver === 'pgsql'
@@ -150,12 +162,15 @@ final class Race
         DB::beginTransaction();
         try {
             DB::select($nowait, [$id]);
-            $free = true;
-        } catch (QueryException) {
-            $free = false;
+        } catch (QueryException $e) {
+            $lockError = $this->driver === 'pgsql' ? $e->errorInfo[0] === '55P03' : in_array($e->errorInfo[1], [1205, 3572], true);
+            check($lockError, "resource lock probe failed with another error: {$e->getMessage()}");
+
+            return;
+        } finally {
+            DB::rollBack();
         }
-        DB::rollBack();
-        check(! $free, "resource row $table.$id was not locked while the transaction was open");
+        check(false, "resource row $table.$id was not locked while the transaction was open");
     }
 
     /** @return array<string, mixed> */
@@ -169,9 +184,11 @@ final class Race
         $this->awaitFile('held');
         $this->spawn('b', $waiter);
         $this->awaitServerLockWait();
-        $this->release('go');
+        $this->releaseHolder();
+        $logs = $this->join();
+        $this->checkWaitedOnResourceLock($logs['b']);
 
-        return $this->join();
+        return $logs;
     }
 }
 
@@ -180,6 +197,11 @@ function check(bool $condition, string $message): void
     if (! $condition) {
         throw new RaceFailure($message);
     }
+}
+
+function checkNoRetries(array $logs): void
+{
+    check(retries($logs['a']) + retries($logs['b']) === 0, 'a retry happened: '.retries($logs['a']).'+'.retries($logs['b']));
 }
 
 function checkOverlap(array $a, array $b): void
@@ -290,6 +312,7 @@ $scenarios = [
         checkOverlap($logs['a'], $logs['b']);
         checkNoException($logs['a']);
         checkNoException($logs['b']);
+        checkNoRetries($logs);
         checkEvents($logs['a'], 0, 1);
         checkEvents($logs['b'], 1, 0);
         check($logs['b']['passed'][0]['superseded'] === null, 'pass superseded a row that was already closed');
@@ -308,6 +331,7 @@ $scenarios = [
         checkOverlap($logs['a'], $logs['b']);
         checkNoException($logs['a']);
         checkNoException($logs['b']);
+        checkNoRetries($logs);
         checkEvents($logs['a'], 1, 1);
         checkEvents($logs['b'], 0, 0);
         check($logs['b']['return'] === $logs['a']['completed'][0]['completed_at'], 'complete() changed or did not read the stored completed_at');
@@ -324,8 +348,9 @@ $scenarios = [
         $race->awaitFile('loaded');
         $race->spawn('a', ['action' => 'movement.complete', 'movement' => $open, 'hooks' => ['update' => [['arrive', 'held'], ['wait', 'go', 30000]]]]);
         $race->awaitServerLockWait();
-        $race->release('go');
+        $race->releaseHolder();
         $logs = $race->join();
+        $race->checkWaitedOnResourceLock($logs['b']);
         checkOverlap($logs['a'], $logs['b']);
         check(($logs['b']['exception']['class'] ?? null) === LogicException::class, 'expected LogicException, got '.errorTag($logs['b']['exception']));
         checkEvents($logs['a'], 0, 1);
@@ -343,6 +368,7 @@ $scenarios = [
         checkOverlap($logs['a'], $logs['b']);
         checkNoException($logs['a']);
         checkNoException($logs['b']);
+        checkNoRetries($logs);
         checkEvents($logs['a'], 1, 0);
         checkEvents($logs['b'], 1, 1);
         checkChain(level($task), 2);
@@ -357,7 +383,7 @@ $scenarios = [
         checkOverlap($logs['a'], $logs['b']);
         checkNoException($logs['a']);
         checkNoException($logs['b']);
-        check(retries($logs['a']) + retries($logs['b']) === 0, 'a retry happened: '.retries($logs['a']).'+'.retries($logs['b']));
+        checkNoRetries($logs);
         checkChain(level($one), 1);
         checkChain(level($two), 1);
 
@@ -373,7 +399,7 @@ $scenarios = [
         checkOverlap($logs['a'], $logs['b']);
         checkNoException($logs['a']);
         checkNoException($logs['b']);
-        check(retries($logs['a']) + retries($logs['b']) === 0, 'a retry happened: '.retries($logs['a']).'+'.retries($logs['b']));
+        checkNoRetries($logs);
         checkChain(level($one), 2);
         checkChain(level($two), 2);
 
@@ -389,6 +415,7 @@ $scenarios = [
         checkOverlap($logs['a'], $logs['b']);
         checkNoException($logs['a']);
         checkNoException($logs['b']);
+        checkNoRetries($logs);
         check(is_int($logs['a']['return']) && $logs['b']['return'] === false, 'expected one new row and one false');
         checkEvents($logs['b'], 0, 0);
         checkChain(level($task), 2);
@@ -454,7 +481,7 @@ $scenarios = [
         seed($task, 1);
         $race->spawn('a', ['action' => 'hold.resource', 'task' => $task, 'inside' => [['arrive', 'held'], ['wait', 'done', 30000]]]);
         $race->awaitFile('held');
-        $race->spawn('b', ['action' => 'caller.pass', 'task' => $task, 'status' => 'b', 'short_lock_timeout' => true, 'inside' => [['arrive', 'calling']]]);
+        $race->spawn('b', ['action' => 'caller.pass', 'task' => $task, 'status' => 'b', 'short_lock_timeout' => true]);
         $race->awaitServerLockWait();
         $logs = timeoutOutcome($race, $task, $driver, 'for update');
 
@@ -513,9 +540,7 @@ function staleCaller(Race $race, array $seeds, string $driver, bool $snapshotIso
     $race->spawn('a', ['action' => 'caller.pass', 'task' => $task, 'status' => 'a', 'read_first' => true, 'inside' => [['arrive', 'read'], ['wait', 'b-done']]]);
     $race->spawn('b', ['action' => 'resource.pass', 'task' => $task, 'status' => 'b', 'before' => [['wait', 'read']]]);
     $race->awaitFile('read');
-    while (! file_exists("$race->dir/b.log.json")) {
-        usleep(2000);
-    }
+    $race->awaitFile('b.log.json');
     $race->release('b-done');
     $logs = $race->join();
     check($logs['a']['tx_begin'] < $logs['b']['tx_end'] && $logs['b']['tx_end'] < $logs['a']['tx_end'], 'no overlap: the caller transaction did not span the other commit');
@@ -526,12 +551,17 @@ function staleCaller(Race $race, array $seeds, string $driver, bool $snapshotIso
     if ($driver === 'pgsql') {
         checkNoException($logs['a']);
         checkChain($rows, count($seeds) + 2);
+        check((int) $rows[count($rows) - 1]->id === $logs['a']['return'], 'the caller row is not the latest on the level');
+        check(collect($rows)->whereNull('completed_at')->count() === 1, 'expected one open movement');
+        checkEvents($logs['a'], 1, 1);
+        check($logs['a']['passed'][0]['superseded'] === $logs['b']['return'], 'caller did not supersede the row written by the other worker');
     } else {
-        $allowed = [UniqueConstraintViolationException::class];
+        $allowed = ['UniqueConstraintViolationException:1062'];
         if ($snapshotIsolation) {
-            $allowed[] = DeadlockException::class;
+            $allowed[] = 'DeadlockException:1020';
         }
-        check(in_array($logs['a']['exception']['class'] ?? null, $allowed, true), 'expected a unique violation (or 1020), got '.errorTag($logs['a']['exception']));
+        $tag = errorTag($logs['a']['exception']);
+        check(in_array($tag, $allowed, true), "expected a unique violation (or 1020), got $tag");
         checkEvents($logs['a'], 0, 0);
         checkChain($rows, count($seeds) + 1);
     }
@@ -553,9 +583,7 @@ function checkRetried(array $logs, int $closedRow): void
 
 function timeoutOutcome(Race $race, int $task, string $driver, string $blockedStatement): array
 {
-    while (! file_exists("$race->dir/b.log.json")) {
-        usleep(2000);
-    }
+    $race->awaitFile('b.log.json');
     $race->release('done');
     $logs = $race->join();
     checkEvents($logs['b'], 0, 0);
@@ -563,7 +591,7 @@ function timeoutOutcome(Race $race, int $task, string $driver, string $blockedSt
     $exception = $logs['b']['exception'];
     check($exception !== null, 'caller did not get an error');
     check(str_contains($exception['message'], $blockedStatement), "timeout did not hit the '$blockedStatement' statement: {$exception['message']}");
-    // Laravel does not class PostgreSQL 55P03 as a concurrency error. Spec 4.3 names only 40001 there; see the task 8 report.
+    // Laravel does not class PostgreSQL 55P03 as a concurrency error. Spec 4.3 names only 40001 on PostgreSQL.
     $expected = $driver === 'pgsql' ? QueryException::class : DeadlockException::class;
     check($exception['class'] === $expected, "expected $expected, got {$exception['class']}: {$exception['message']}");
     $rows = level($task);
@@ -574,12 +602,14 @@ function timeoutOutcome(Race $race, int $task, string $driver, string $blockedSt
 
 $only = $argv[2] ?? '';
 $failed = false;
+$ran = 0;
 
 foreach ($scenarios as $name => $scenario) {
     if ($only !== '' && ! str_starts_with($name, $only)) {
         continue;
     }
 
+    $ran++;
     $passed = 0;
     $retries = 0;
     $lockWaits = 0;
@@ -618,6 +648,11 @@ foreach ($scenarios as $name => $scenario) {
         echo "  $failure\n";
     }
     $failed = $failed || $failures !== [];
+}
+
+if ($ran === 0) {
+    fwrite(STDERR, "no scenario matches prefix '$only'\n");
+    exit(1);
 }
 
 exit($failed ? 1 : 0);

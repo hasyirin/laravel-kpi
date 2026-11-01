@@ -71,8 +71,8 @@ Event::listen(TransactionCommitted::class, $endTransaction);
 Event::listen(TransactionRolledBack::class, $endTransaction);
 Event::listen(QueryExecuted::class, function (QueryExecuted $query) use (&$log) {
     $sql = str_replace(['"', '`'], '', $query->sql);
-    if (preg_match('/^select .* from (tasks|race_resources) .*for update/', $sql, $match)) {
-        $log['locks'][] = ['connection' => $query->connectionName, 'table' => $match[1], 'ms' => $query->time, 'at' => microtime(true)];
+    if (preg_match('/^select .* from (tasks|race_resources) .*for update/', $sql)) {
+        $log['locks'][] = ['connection' => $query->connectionName, 'at' => microtime(true)];
     }
     if (preg_match('/(?:from|into|update) movements/', $sql)) {
         $log['tables_by_connection'][$query->connectionName] = true;
@@ -110,11 +110,8 @@ $actions = [
 
         return $movement === false ? false : $movement->getKey();
     },
-    'movement.complete' => function () use ($spec, $runOps) {
-        $movement = Movement::findOrFail($spec['movement']);
-        $runOps($spec['before'] ?? []);
-
-        return (string) $movement->complete()->completed_at;
+    'movement.complete' => function () use ($spec) {
+        return (string) Movement::findOrFail($spec['movement'])->complete()->completed_at;
     },
     'movement.pass' => function () use ($spec, $runOps, &$log) {
         $movement = Movement::findOrFail($spec['movement']);
@@ -133,7 +130,6 @@ $actions = [
     },
     'caller.pass' => function () use ($spec, $resource, $runOps) {
         $model = $resource();
-        $runOps($spec['before'] ?? []);
 
         if ($spec['short_lock_timeout'] ?? false) {
             DB::statement(raceLockTimeout());
@@ -163,7 +159,7 @@ $actions = [
         DB::rollBack();
     },
     'rogue.insert' => function () use ($spec, $runOps) {
-        $connection = DB::connection($spec['connection'] ?? null);
+        $connection = DB::connection();
         $connection->statement(raceDisableForeignKeys());
         $runOps($spec['before'] ?? []);
 
@@ -201,8 +197,6 @@ $actions = [
         ];
     },
 ];
-
-$log['started'] = microtime(true);
 
 try {
     $log['return'] = $actions[$spec['action']]();
