@@ -15,6 +15,9 @@ readonly class WorkSchedule
         }
     }
 
+    /**
+     * @param  array{string, string}  $data
+     */
     public static function parse(array $data): self
     {
         return new self(Hour::parse($data[0]), Hour::parse($data[1]));

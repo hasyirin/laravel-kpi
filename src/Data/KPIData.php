@@ -6,6 +6,9 @@ use Carbon\CarbonInterval;
 use Illuminate\Contracts\Support\Arrayable;
 use JsonSerializable;
 
+/**
+ * @implements Arrayable<string, mixed>
+ */
 final class KPIData implements Arrayable, JsonSerializable
 {
     public function __construct(
@@ -55,6 +58,9 @@ final class KPIData implements Arrayable, JsonSerializable
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function jsonSerialize(): array
     {
         return $this->toArray();

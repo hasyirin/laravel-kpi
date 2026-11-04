@@ -8,6 +8,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property string $name
+ * @property CarbonInterface $date
+ * @property bool $observes_substitute
+ */
 class Holiday extends Model
 {
     use SoftDeletes;
@@ -28,9 +34,12 @@ class Holiday extends Model
 
     public function getTable(): string
     {
-        return $this->table ?? config('kpi.tables.holidays', parent::getTable());
+        return $this->table ?? config()->string('kpi.tables.holidays', parent::getTable());
     }
 
+    /**
+     * @param  Builder<self>  $query
+     */
     public function scopeRange(Builder $query, CarbonInterface|string $start, CarbonInterface|string|null $end = null): void
     {
         $query

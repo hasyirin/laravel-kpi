@@ -4,6 +4,7 @@ namespace Hasyirin\KPI\Support;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Hasyirin\KPI\Data\WorkSchedule;
 use Hasyirin\KPI\Models\Holiday;
 use Hasyirin\KPI\Models\RecurringHoliday;
 use Illuminate\Contracts\Support\Arrayable;
@@ -13,6 +14,8 @@ use Illuminate\Support\Collection;
 class HolidayCalendar
 {
     /**
+     * @param  Collection<int, WorkSchedule>  $schedules
+     * @param  Arrayable<array-key, CarbonInterface|string>|array<array-key, CarbonInterface|string>  $excludeDates
      * @return array<string, true>
      */
     public function excludedDays(CarbonImmutable $start, CarbonImmutable $end, Collection $schedules, Arrayable|array $excludeDates = []): array
@@ -20,7 +23,9 @@ class HolidayCalendar
         $queryStart = $start->subDays(7)->toDateString();
         $queryEnd = $end->toDateString();
 
+        /** @var class-string<Holiday> $holiday */
         $holiday = config('kpi.models.holiday', Holiday::class);
+        /** @var class-string<RecurringHoliday> $recurring */
         $recurring = config('kpi.models.recurring_holiday', RecurringHoliday::class);
 
         $oneOffOccurrences = $holiday::query()
@@ -39,11 +44,13 @@ class HolidayCalendar
                 'observes_substitute' => (bool) $r->observes_substitute,
             ]));
 
-        $substituteDays = collect(config('kpi.substitute', []))->flip();
+        /** @var list<int> $substitute */
+        $substitute = config('kpi.substitute', []);
+        $substituteDays = collect($substitute)->flip();
 
         $days = [];
 
-        foreach (collect($excludeDates) as $date) {
+        foreach (new Collection($excludeDates) as $date) {
             $days[Carbon::parse($date)->format('Y-m-d')] = true;
         }
 
@@ -63,6 +70,9 @@ class HolidayCalendar
         return $days;
     }
 
+    /**
+     * @param  Collection<int, WorkSchedule>  $schedules
+     */
     private function nextScheduledDay(CarbonInterface $holiday, Collection $schedules): CarbonInterface
     {
         $date = $holiday;

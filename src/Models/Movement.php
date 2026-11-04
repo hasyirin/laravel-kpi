@@ -31,9 +31,11 @@ use LogicException;
  * @property ?int $actor_id
  * @property ?string $actor_type
  * @property string $status
+ * @property-read int $level_key
  * @property ?float $period
  * @property ?int $seconds
  * @property ?string $notes
+ * @property array<array-key, mixed> $properties
  * @property bool $expects_children
  * @property CarbonInterface $received_at
  * @property ?CarbonInterface $completed_at
@@ -78,7 +80,7 @@ class Movement extends Model
 
     public function getTable(): string
     {
-        return $this->table ?? config('kpi.tables.movements', parent::getTable());
+        return $this->table ?? config()->string('kpi.tables.movements', parent::getTable());
     }
 
     protected static function boot(): void
@@ -115,7 +117,10 @@ class Movement extends Model
 
     public function isExcepted(): bool
     {
-        $excepted = collect(config("kpi.status.$this->movable_type.except", []))
+        /** @var array<BackedEnum|string> $except */
+        $except = config("kpi.status.$this->movable_type.except", []);
+
+        $excepted = collect($except)
             ->map(fn (BackedEnum|string $status) => (string) ($status instanceof BackedEnum ? $status->value : $status));
 
         return $excepted->contains((string) $this->status);
@@ -174,7 +179,7 @@ class Movement extends Model
     public function complete(?CarbonInterface $at = null): self
     {
         ResourceLock::forMovement($this)->run($this->getConnection(), function () use ($at) {
-            $this->closeLocked(($at ?? now())->copy()->setTimezone(config('app.timezone')));
+            $this->closeLocked(($at ?? now())->copy()->setTimezone(config()->string('app.timezone')));
         });
 
         return $this;
@@ -194,8 +199,10 @@ class Movement extends Model
             ->each(fn (self $child) => $child->closeLocked($at));
 
         if ($backfillActor !== null && $this->actor_id === null) {
-            $this->actor_id = $backfillActor->getKey();
-            $this->actor_type = $backfillActor->getMorphClass();
+            $this->forceFill([
+                'actor_id' => $backfillActor->getKey(),
+                'actor_type' => $backfillActor->getMorphClass(),
+            ]);
         }
 
         $this->completed_at = $at->max($this->received_at);
@@ -211,7 +218,7 @@ class Movement extends Model
         $row = $this->newQueryWithoutScopes()->whereKey($this->getKey())->lockForUpdate()->toBase()->first();
 
         if ($row === null) {
-            throw new LogicException("Cannot lock missing movement {$this->getKey()}.");
+            throw new LogicException("Cannot lock missing movement {$this->id}.");
         }
 
         $this->setRawAttributes((array) $row, true);
@@ -220,6 +227,7 @@ class Movement extends Model
     /**
      * @internal
      *
+     * @param  Collection<array-key, mixed>|array<array-key, mixed>|null  $properties
      * @return ($onlyIfNotCurrent is true ? self|false : self)
      */
     public function passOnLevel(
@@ -250,7 +258,7 @@ class Movement extends Model
                 }
             }
 
-            $at = ($receivedAt ?? now())->copy()->setTimezone(config('app.timezone'));
+            $at = ($receivedAt ?? now())->copy()->setTimezone(config()->string('app.timezone'));
 
             $level = $this->newQueryWithoutScopes()
                 ->where('movable_type', $movableType)
@@ -298,11 +306,16 @@ class Movement extends Model
 
     protected function isCurrent(string $status, ?Model $actor): bool
     {
+        $actorKey = $actor?->getKey();
+
         return (string) $this->status === $status
             && $this->actor_type === $actor?->getMorphClass()
-            && (string) $this->actor_id === (string) $actor?->getKey();
+            && (string) $this->actor_id === (is_scalar($actorKey) ? (string) $actorKey : '');
     }
 
+    /**
+     * @param  Collection<array-key, mixed>|array<array-key, mixed>|null  $properties
+     */
     public function pass(
         BackedEnum|string $status,
         ?Model $sender = null,
@@ -336,6 +349,9 @@ class Movement extends Model
         return $target->children()->whereNull('completed_at')->doesntExist();
     }
 
+    /**
+     * @param  Collection<array-key, mixed>|array<array-key, mixed>|null  $properties
+     */
     public function passIfNotCurrent(
         BackedEnum|string $status,
         ?Model $sender = null,
@@ -352,31 +368,49 @@ class Movement extends Model
         );
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function movable(): MorphTo
     {
         return $this->morphTo();
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function sender(): MorphTo
     {
         return $this->morphTo();
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function actor(): MorphTo
     {
         return $this->morphTo();
     }
 
+    /**
+     * @param  Builder<self>  $query
+     */
     public function scopeOpen(Builder $query): void
     {
         $query->whereNull('completed_at');
     }
 
+    /**
+     * @param  Builder<self>  $query
+     */
     public function scopeClosed(Builder $query): void
     {
         $query->whereNotNull('completed_at');
     }
 
+    /**
+     * @param  Builder<self>  $query
+     */
     public function scopeRoots(Builder $query): void
     {
         $query->whereNull('parent_id');

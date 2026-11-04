@@ -7,6 +7,7 @@ use Carbon\CarbonInterface;
 use Hasyirin\KPI\Contracts\HasMovement;
 use Hasyirin\KPI\Models\Movement;
 use Hasyirin\KPI\Support\ResourceLock;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
@@ -25,7 +26,7 @@ trait InteractsWithMovement
         $model = config('kpi.models.movement', Movement::class);
 
         return $this->morphOne($model, 'movable')
-            ->ofMany(['id' => 'max'], fn ($query) => $query->whereNull('completed_at'));
+            ->ofMany(['id' => 'max'], fn (Builder $query) => $query->whereNull('completed_at'));
     }
 
     /** @return MorphMany<Movement, $this> */
@@ -37,6 +38,9 @@ trait InteractsWithMovement
         return $this->morphMany($model, 'movable');
     }
 
+    /**
+     * @param  Collection<array-key, mixed>|array<array-key, mixed>|null  $properties
+     */
     public function pass(
         BackedEnum|string $status,
         ?Model $sender = null,
@@ -49,12 +53,17 @@ trait InteractsWithMovement
     ): Movement {
         $this->unsetRelation('movement');
 
+        $lock = ResourceLock::forResource($this);
+
         return $this->movements()->getRelated()->passOnLevel(
-            ResourceLock::forResource($this), $this->getMorphClass(), $this->getKey(), null,
+            $lock, $this->getMorphClass(), $lock->key, null,
             $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren, false,
         );
     }
 
+    /**
+     * @param  Collection<array-key, mixed>|array<array-key, mixed>|null  $properties
+     */
     public function passIfNotCurrent(
         BackedEnum|string $status,
         ?Model $sender = null,
@@ -67,8 +76,10 @@ trait InteractsWithMovement
     ): Movement|false {
         $this->unsetRelation('movement');
 
+        $lock = ResourceLock::forResource($this);
+
         return $this->movements()->getRelated()->passOnLevel(
-            ResourceLock::forResource($this), $this->getMorphClass(), $this->getKey(), null,
+            $lock, $this->getMorphClass(), $lock->key, null,
             $status, $sender, $actor, $receivedAt, $notes, $properties, $supersede, $expectsChildren, true,
         );
     }

@@ -5,6 +5,9 @@ namespace Hasyirin\KPI\Database\Factories;
 use Hasyirin\KPI\Models\RecurringHoliday;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
+/**
+ * @extends Factory<RecurringHoliday>
+ */
 class RecurringHolidayFactory extends Factory
 {
     protected $model = RecurringHoliday::class;

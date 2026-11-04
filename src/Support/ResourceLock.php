@@ -18,12 +18,18 @@ final class ResourceLock
         private readonly ConnectionInterface $connection,
         private readonly string $table,
         private readonly string $keyName,
-        private readonly mixed $key,
+        public readonly int|string $key,
     ) {}
 
     public static function forResource(Model $resource): self
     {
-        return new self($resource->getConnection(), $resource->getTable(), $resource->getKeyName(), $resource->getKey());
+        $key = $resource->getKey();
+
+        if (! is_int($key) && ! is_string($key)) {
+            throw new LogicException('Cannot lock a resource that has no primary key.');
+        }
+
+        return new self($resource->getConnection(), $resource->getTable(), $resource->getKeyName(), $key);
     }
 
     public static function forMovement(Movement $movement): self
@@ -40,6 +46,12 @@ final class ResourceLock
         );
     }
 
+    /**
+     * @template TReturn
+     *
+     * @param  Closure(): TReturn  $callback
+     * @return TReturn
+     */
     public function run(ConnectionInterface $movementConnection, Closure $callback): mixed
     {
         $lock = $this->connection;

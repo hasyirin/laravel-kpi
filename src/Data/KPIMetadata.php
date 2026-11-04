@@ -5,6 +5,9 @@ namespace Hasyirin\KPI\Data;
 use Illuminate\Contracts\Support\Arrayable;
 use JsonSerializable;
 
+/**
+ * @implements Arrayable<string, int>
+ */
 final class KPIMetadata implements Arrayable, JsonSerializable
 {
     public function __construct(
@@ -37,6 +40,9 @@ final class KPIMetadata implements Arrayable, JsonSerializable
         ];
     }
 
+    /**
+     * @return array<string, int>
+     */
     public function jsonSerialize(): array
     {
         return $this->toArray();

@@ -22,6 +22,7 @@ use Illuminate\Support\Collection;
  */
 class RecurringHoliday extends Model
 {
+    /** @use HasFactory<RecurringHolidayFactory> */
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
@@ -46,7 +47,7 @@ class RecurringHoliday extends Model
 
     public function getTable(): string
     {
-        return $this->table ?? config('kpi.tables.recurring_holidays', parent::getTable());
+        return $this->table ?? config()->string('kpi.tables.recurring_holidays', parent::getTable());
     }
 
     protected static function newFactory(): RecurringHolidayFactory
@@ -54,6 +55,9 @@ class RecurringHoliday extends Model
         return RecurringHolidayFactory::new();
     }
 
+    /**
+     * @param  Builder<self>  $query
+     */
     public function scopeEffectiveIn(Builder $query, CarbonInterface|string $start, CarbonInterface|string|null $end = null): void
     {
         $start = Carbon::parse($start);
@@ -64,6 +68,9 @@ class RecurringHoliday extends Model
             ->where(fn (Builder $q) => $q->whereNull('effective_until')->orWhereDate('effective_until', '>=', $start));
     }
 
+    /**
+     * @return Collection<int, Carbon>
+     */
     public function occurrencesIn(CarbonInterface|string $start, CarbonInterface|string $end): Collection
     {
         $start = Carbon::parse($start);
@@ -71,7 +78,7 @@ class RecurringHoliday extends Model
 
         return collect(range($start->year, $end->year))
             ->filter(fn (int $year) => checkdate($this->month, $this->day, $year))
-            ->map(fn (int $year) => Carbon::create($year, $this->month, $this->day))
+            ->map(fn (int $year) => Carbon::createStrict($year, $this->month, $this->day))
             ->filter(fn (CarbonInterface $date) => (! $this->effective_from || $date->gte($this->effective_from)) &&
                 (! $this->effective_until || $date->lte($this->effective_until)) &&
                 $date->between($start, $end)

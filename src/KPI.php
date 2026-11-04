@@ -9,22 +9,30 @@ use Hasyirin\KPI\Data\KPIMetadata;
 use Hasyirin\KPI\Data\WorkSchedule;
 use Hasyirin\KPI\Support\HolidayCalendar;
 use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Support\Collection;
 
 class KPI
 {
+    /**
+     * @param  Arrayable<array-key, CarbonInterface|string>|array<array-key, CarbonInterface|string>  $excludeDates
+     * @param  Arrayable<int, WorkSchedule>|array<int, WorkSchedule>  $schedules
+     */
     public function calculate(
         CarbonInterface|string $start,
         CarbonInterface|string|null $end = null,
         Arrayable|array $excludeDates = [],
         Arrayable|array $schedules = [],
     ): KPIData {
-        $schedules = collect($schedules);
+        $schedules = new Collection($schedules);
 
         if ($schedules->isEmpty()) {
-            $schedules = collect(config('kpi.schedule', []))->map(fn (array $data) => WorkSchedule::parse($data));
+            /** @var array<int, array{string, string}> $configuredSchedules */
+            $configuredSchedules = config('kpi.schedule', []);
+            $schedules = collect($configuredSchedules)->map(fn (array $data) => WorkSchedule::parse($data));
         }
 
-        $timezone = config('kpi.timezone', null) ?? config('app.timezone');
+        $configuredTimezone = config('kpi.timezone');
+        $timezone = is_string($configuredTimezone) ? $configuredTimezone : config()->string('app.timezone');
 
         $start = $this->toTimezone($start, $timezone);
         $end = $this->toTimezone($end ?? now(), $timezone);

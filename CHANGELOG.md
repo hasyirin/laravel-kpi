@@ -2,6 +2,26 @@
 
 All notable changes to `laravel-kpi` will be documented in this file.
 
+## v4.0.2 — PHPStan level 10 - 2026-11-05
+
+Patch release. The package now passes PHPStan level 10. The public API does not change.
+
+### Changed
+
+- `pass()` and `passIfNotCurrent()` on a resource with no primary key throw `LogicException` with the message `Cannot lock a resource that has no primary key.` They threw `LogicException` before too, but with a message about a missing row.
+- If `kpi.tables.*` is set to a value that is not a string, the `getTable()` method of `Movement`, `Holiday` or `RecurringHoliday` throws `InvalidArgumentException`.
+
+### Internal
+
+- PHPStan runs at level 10. It ran at level 5 before. The baseline stays empty.
+- Generic types on relations, scopes, collections, `Arrayable` and the factory.
+- `@property` docblocks on `Holiday`, and on `$properties` and `$level_key` of `Movement`.
+- `HasMovement::movement()` and `HasMovement::movements()` declare `MorphOne<Movement, covariant Model>` and `MorphMany<Movement, covariant Model>`.
+- `ResourceLock::run()` is generic over the return type of its callback.
+- Development dependencies are updated to their latest minor and patch releases. The version constraints in `composer.json` do not change.
+
+**Full Changelog**: https://github.com/hasyirin/laravel-kpi/compare/v4.0.1...v4.0.2
+
 ## v4.0.1 — stricter hour parsing - 2026-11-02
 
 Patch release. Only `Hour::parse()` changes at runtime.
